@@ -49,6 +49,13 @@ NUDGE_TEXT = (
     "there), then wait.]"
 )
 
+# Stall recovery (see LiveAgent): at most this many reconnects per user turn.
+MAX_STALL_RECOVERIES = 2
+RESUMED_RECOVERY_TEXT = (
+    "(Connection was restored. Reply to the user's last message; if a tool result was "
+    "pending, check the screen with get_screen first.)"
+)
+
 # Write tools are never cancelled half-way: if the model cancels one while it runs
 # (barge-in), it finishes and the model is told the real outcome.
 NON_CANCELLABLE = {"save", "set_stage"}
@@ -183,6 +190,11 @@ class Session:
         self._last_agent_audio = 0.0
         self._nudged = False
         self._mic_on = False
+        # Stall recovery: context to replay if the Live session has to start fresh.
+        self._stalls = 0  # recoveries since the user's last turn / the model's last output
+        self._user_buf = ""
+        self._last_user_text = ""
+        self._last_form: dict[str, Any] | None = None
         self.outcome = Outcome()
         self._bg_tasks: set[asyncio.Task] = set()
 
@@ -235,6 +247,8 @@ class Session:
         now = time.monotonic()
         speaking = now - self._last_agent_audio < 0.3
         self._turn = TurnStats(user_end=now, source="text", wait_boundary=speaking)
+        self._stalls = 0
+        self._last_user_text = text
         # The client renders typed messages itself; do not echo them back.
         try:
             async with self._text_lock:
@@ -498,6 +512,7 @@ class Session:
 
     async def on_audio(self, pcm: bytes) -> None:
         self._agent_busy = True
+        self._stalls = 0
         t = self._turn
         now = time.monotonic()
         self._last_agent_audio = now
@@ -522,6 +537,12 @@ class Session:
             # A new spoken user turn begins (unless one is already being tracked).
             if self._turn.first_audio is not None or self._turn.source != "voice":
                 self._turn = TurnStats(source="voice")
+            self._user_buf += text
+            if final and self._user_buf.strip():
+                self._last_user_text, self._user_buf = self._user_buf.strip(), ""
+                self._stalls = 0
+        elif text:
+            self._stalls = 0
         await self.send_event("transcript", role=role, text=text, final=final)
 
     async def on_voice_activity(self, kind: str) -> None:
@@ -529,6 +550,7 @@ class Session:
             self._turn.user_end = time.monotonic()
         elif kind == "start":
             self._mark_user_activity()
+            self._stalls = 0
 
     async def on_interrupted(self) -> None:
         self.outcome.barge_ins += 1
@@ -578,9 +600,52 @@ class Session:
 
     async def on_tool_call(self, calls: list[types.FunctionCall]) -> None:
         self._agent_busy = True
+        self._stalls = 0
         task = asyncio.create_task(self._run_calls(calls), name=f"tools-{self.id}")
         self._tool_tasks.add(task)
         task.add_done_callback(self._tool_tasks.discard)
+
+    async def on_stall(self, waited_s: float) -> bool:
+        """The model owes a reply but has been silent. True: reconnect and retry."""
+        self._stalls += 1
+        recover = self._stalls <= MAX_STALL_RECOVERIES
+        log.warning("[%s] live stall %d: silent for %.1fs (%s)", self.id, self._stalls,
+                    waited_s, "reconnecting" if recover else "giving up on this turn")
+        self.metrics.record(
+            "stall",
+            session_id=self.id,
+            model=self.live.model if self.live else None,
+            waited_ms=round(waited_s * 1000),
+            attempt=self._stalls,
+            recovered=recover,
+        )
+        if recover:
+            await self.send_event(
+                "status", state="reconnecting", message="The voice service is slow — reconnecting…"
+            )
+        else:
+            await self.send_event(
+                "error",
+                message="The voice service is not responding right now. "
+                "Please say that again in a moment.",
+            )
+        return recover
+
+    def recovery_text(self, resumed: bool) -> str:
+        """Text sent after a stall reconnect so the model answers the pending turn."""
+        if resumed:
+            return RESUMED_RECOVERY_TEXT
+        # Fresh session without history: replay a compact summary.
+        parts = ["(The connection was restored, but the conversation history was lost."]
+        if self._last_user_text:
+            parts.append(f'The user\'s last message was: "{_short(self._last_user_text, 300)}".')
+        form = self._last_form
+        if form:
+            fields = ", ".join(f"{k}: {v}" for k, v in (form.get("fields") or {}).items())
+            parts.append(f"Last seen on screen: {form.get('entity') or 'record'} form"
+                         + (f" with {_short(fields, 400)}." if fields else "."))
+        parts.append("Check the screen with get_screen, then reply to the user.)")
+        return " ".join(parts)
 
     async def on_tool_cancel(self, ids: list[str]) -> None:
         for call_id in ids:
@@ -732,6 +797,7 @@ class Session:
     async def _emit_form(self, result: dict[str, Any]) -> None:
         form = result.get("form")
         if isinstance(form, dict) and form:
+            self._last_form = form
             await self.send_event(
                 "form",
                 entity=form.get("entity"),
@@ -824,6 +890,7 @@ async def _default_live_factory(session: Session) -> LiveAgent:
         config_factory=config_factory,
         events=session,
         text_mode=s.live_text_mode,
+        stall_timeout_s=s.live_stall_timeout_s or None,
     )
     await agent.start()
     return agent

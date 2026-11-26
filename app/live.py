@@ -5,6 +5,9 @@
 - runs the receive loop and dispatches events to a `LiveEvents` handler (session.py)
 - reconnects transparently on `go_away` / dropped connections using the latest
   session-resumption handle
+- stall watchdog: if the model owes a reply (after a user turn, typed text or a
+  tool response) and sends nothing for `stall_timeout_s`, it reconnects (resuming
+  when a handle exists) and asks the model to answer the pending turn
 - falls back to the next candidate model if the first one cannot be connected
 
 Model choice: GEMINI_LIVE_MODEL if set; otherwise `models.list()` filtered on the
@@ -240,6 +243,8 @@ class LiveEvents(Protocol):
     async def on_usage(self, usage: types.UsageMetadata) -> None: ...
     async def on_voice_activity(self, kind: str) -> None: ...
     async def on_status(self, state: str, message: str) -> None: ...
+    async def on_stall(self, waited_s: float) -> bool: ...  # False: do not reconnect
+    def recovery_text(self, resumed: bool) -> str: ...
 
 
 ConnectFn = Callable[..., AsyncContextManager[Any]]
@@ -260,12 +265,14 @@ class LiveAgent:
         config_factory: Callable[[str | None], types.LiveConnectConfig],
         events: LiveEvents,
         text_mode: str = "auto",
+        stall_timeout_s: float | None = None,  # None disables the stall watchdog
     ) -> None:
         self._connect = connect
         self._models = list(models)
         self._config_factory = config_factory
         self._events = events
         self._text_mode = text_mode
+        self._stall_timeout_s = stall_timeout_s
 
         self.model: str | None = None
         self._session: Any = None
@@ -280,6 +287,11 @@ class LiveAgent:
         self._reconnect_deadline: float | None = None
         self._tools_in_flight = 0
         self._agent_speaking = False
+        # Stall watchdog state
+        self._awaiting_since: float | None = None  # model owes a reply since then
+        self._user_speaking = False
+        self._replied = True  # the model produced output since the user last spoke
+        self._stall_recovery = False  # the current reconnect was caused by a stall
 
         # Transcription accumulators (events are incremental; we emit deltas).
         self._out_text_open = False
@@ -366,6 +378,7 @@ class LiveAgent:
                 turns=types.Content(role="user", parts=[types.Part(text=text)]),
                 turn_complete=True,
             )
+        self._expect_reply()
 
     async def send_tool_responses(self, responses: list[types.FunctionResponse]) -> None:
         if not responses:
@@ -375,6 +388,7 @@ class LiveAgent:
             log.warning("dropping %d tool responses: not connected", len(responses))
             return
         await session.send_tool_response(function_responses=responses)
+        self._expect_reply()
 
     def tool_started(self) -> None:
         self._tools_in_flight += 1
@@ -406,6 +420,7 @@ class LiveAgent:
                 model = self._models[model_idx]
             else:
                 model = self.model
+            resuming = self._handle is not None
             config = self._config_factory(self._handle)
             try:
                 async with self._connect(model=model, config=config) as session:
@@ -420,10 +435,16 @@ class LiveAgent:
                         log.info("Live connected: model=%s", model)
                         self._connected_once.set()
                     else:
-                        log.info("Live resumed (handle=%s)", bool(self._handle))
+                        log.info("Live resumed (handle=%s)", resuming)
                         await self._events.on_status("ready", "Reconnected")
+                        if self._awaiting_since is not None:
+                            self._awaiting_since = time.monotonic()  # restart the clock
+                        if self._stall_recovery:
+                            self._stall_recovery = False
+                            await self.send_text(self._events.recovery_text(resuming))
                     reconnects = 0
-                    await self._receive_loop(session)
+                    # Returns on go_away or a stall; the loop then reconnects.
+                    await self._receive_or_stall(session)
             except asyncio.CancelledError:
                 raise
             except errors.APIError as exc:
@@ -457,6 +478,60 @@ class LiveAgent:
             if reconnects:
                 await self._events.on_status("reconnecting", "Reconnecting to the voice service…")
                 await asyncio.sleep(min(0.5 * reconnects, 2.0))
+
+    async def _receive_or_stall(self, session: Any) -> None:
+        """Run the receive loop until it ends, or until the stall watchdog fires."""
+        receiver = asyncio.create_task(self._receive_loop(session))
+        watcher = asyncio.create_task(self._stall_watch())
+        try:
+            done, _ = await asyncio.wait({receiver, watcher}, return_when=asyncio.FIRST_COMPLETED)
+        finally:
+            for t in (receiver, watcher):
+                t.cancel()
+            await asyncio.gather(receiver, watcher, return_exceptions=True)
+        for t in done:
+            if t.exception() is not None:
+                raise t.exception()
+
+    async def _stall_watch(self) -> None:
+        """Return when the model owes a reply and has been silent for too long."""
+        if not self._stall_timeout_s:
+            await asyncio.Event().wait()  # disabled: wait forever (cancelled by caller)
+        while True:
+            await asyncio.sleep(min(0.25, self._stall_timeout_s / 4))
+            since = self._awaiting_since
+            if (
+                since is None
+                or self._tools_in_flight
+                or self._user_speaking
+                or self._agent_speaking
+            ):
+                continue
+            waited = time.monotonic() - since
+            if waited < self._stall_timeout_s:
+                continue
+            log.warning("Live stall: no model output %.1fs after a request (model=%s, handle=%s)",
+                        waited, self.model, bool(self._handle))
+            if await self._events.on_stall(waited):
+                self._stall_recovery = True
+                return
+            self._awaiting_since = None  # gave up on this turn; keep the session
+
+    def _expect_reply(self) -> None:
+        self._awaiting_since = time.monotonic()
+
+    def _user_spoke(self) -> None:
+        self._replied = False
+        self._awaiting_since = None  # still talking: nothing owed yet
+
+    def _user_turn_ended(self) -> None:
+        # Transcripts can arrive late; only start the clock if no reply has begun.
+        if not self._replied:
+            self._expect_reply()
+
+    def _got_output(self) -> None:
+        self._replied = True
+        self._awaiting_since = None
 
     async def _receive_loop(self, session: Any) -> None:
         """Process messages until the connection closes or a reconnect is due."""
@@ -495,8 +570,12 @@ class LiveAgent:
         if msg.voice_activity is not None and msg.voice_activity.voice_activity_type:
             kind = msg.voice_activity.voice_activity_type
             if kind == types.VoiceActivityType.ACTIVITY_END:
+                self._user_speaking = False
+                self._user_turn_ended()
                 await self._events.on_voice_activity("end")
             elif kind == types.VoiceActivityType.ACTIVITY_START:
+                self._user_speaking = True
+                self._user_spoke()
                 await self._events.on_voice_activity("start")
 
         sc = msg.server_content
@@ -504,6 +583,7 @@ class LiveAgent:
             await self._handle_server_content(sc)
 
         if msg.tool_call is not None and msg.tool_call.function_calls:
+            self._got_output()
             await self._events.on_tool_call(list(msg.tool_call.function_calls))
 
         if msg.tool_call_cancellation is not None and msg.tool_call_cancellation.ids:
@@ -514,6 +594,7 @@ class LiveAgent:
 
     async def _handle_server_content(self, sc: types.LiveServerContent) -> None:
         if sc.interrupted:
+            self._got_output()
             self._agent_speaking = False
             await self._close_agent_transcript()
             await self._events.on_interrupted()
@@ -522,12 +603,17 @@ class LiveAgent:
             t = sc.input_transcription
             if t.text:
                 self._in_text_open = True
+                if not t.finished:
+                    self._user_spoke()
                 await self._events.on_transcript("user", t.text, False)
-            if t.finished and self._in_text_open:
-                self._in_text_open = False
-                await self._events.on_transcript("user", "", True)
+            if t.finished:
+                self._user_turn_ended()
+                if self._in_text_open:
+                    self._in_text_open = False
+                    await self._events.on_transcript("user", "", True)
 
         if sc.model_turn is not None and sc.model_turn.parts:
+            self._got_output()
             # The model has started answering: the user's utterance is over.
             if self._in_text_open:
                 self._in_text_open = False
@@ -541,6 +627,7 @@ class LiveAgent:
         if sc.output_transcription is not None:
             t = sc.output_transcription
             if t.text:
+                self._got_output()
                 if self._in_text_open:
                     self._in_text_open = False
                     await self._events.on_transcript("user", "", True)
@@ -553,6 +640,7 @@ class LiveAgent:
             self._agent_speaking = False
 
         if sc.turn_complete:
+            self._got_output()
             self._agent_speaking = False
             await self._close_agent_transcript()
             await self._events.on_turn_complete()

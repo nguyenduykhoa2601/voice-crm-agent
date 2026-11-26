@@ -61,7 +61,7 @@ class ToolRecorder:
 
 
 def make_session(tmp_path, *, connector=None, tools=None, browser=None, model="gemini-3.8-live",
-                 api_key="test-key", acquire=None, release=None, **kw):
+                 api_key="test-key", acquire=None, release=None, stall_timeout_s=None, **kw):
     connector = connector or FakeConnector()
     tools = tools or ToolRecorder()
     browser = browser or FakeBrowser(frames=[b"f0"])
@@ -76,6 +76,7 @@ def make_session(tmp_path, *, connector=None, tools=None, browser=None, model="g
                 system_instruction="test", tool_declarations=DECLS, resumption_handle=handle
             ),
             events=session,
+            stall_timeout_s=stall_timeout_s,
         )
         await agent.start(timeout=2)
         return agent
@@ -537,4 +538,78 @@ async def test_typed_text_does_not_block_receive_loop(tmp_path):
         session.handle_client_text(json.dumps({"type": "mic", "on": False})), 0.2)
     session.live._ready.set()
     await wait_until(lambda: "hello" in live.texts and live.audio_stream_ends == 1)
+    await session.shutdown()
+
+
+# ----------------------------------------------------------------- stall watchdog
+
+
+async def test_stall_reconnects_with_handle_and_asks_for_a_reply(tmp_path):
+    session, transport, connector, _, _ = make_session(tmp_path, stall_timeout_s=0.3)
+    await start(session, transport)
+    first = connector.sessions[0]
+    first.push(resumption_msg("h1"))
+    # The greeting got no reply at all: the service stalled.
+    await wait_until(lambda: len(connector.sessions) == 2, timeout=3)
+    assert connector.configs[1].session_resumption.handle == "h1"
+    second = connector.sessions[1]
+    await wait_until(lambda: second.texts)
+    assert second.texts == [session_mod.RESUMED_RECOVERY_TEXT]
+    assert any(e["state"] == "reconnecting" for e in transport.events("status"))
+    # The model answers now: no further reconnects.
+    second.push(audio_msg(b"\x00\x00"))
+    second.push(turn_complete_msg())
+    await asyncio.sleep(0.6)
+    assert len(connector.sessions) == 2 and not session.closed
+    stalls = [e for e in session.metrics.events() if e["kind"] == "stall"]
+    assert len(stalls) == 1 and stalls[0]["waited_ms"] >= 300
+    await session.shutdown()
+
+
+async def test_no_stall_while_a_tool_is_running(tmp_path):
+    tools = ToolRecorder()
+    tools.release = asyncio.Event()
+    session, transport, connector, _, _ = make_session(tmp_path, tools=tools, stall_timeout_s=0.2)
+    await start(session, transport)
+    live = connector.sessions[0]
+    live.push(tool_call_msg(("slow", "get_screen", {})))  # the model replies with a tool call
+    await wait_until(lambda: tools.calls)
+    await asyncio.sleep(0.6)  # tool runs longer than the stall timeout
+    assert len(connector.sessions) == 1
+    tools.release.set()
+    await wait_until(lambda: live.tool_responses)
+    live.push(audio_msg(b"\x00\x00"))  # the model answers the tool result
+    live.push(turn_complete_msg())
+    await asyncio.sleep(0.5)
+    assert len(connector.sessions) == 1
+    assert not [e for e in session.metrics.events() if e["kind"] == "stall"]
+    await session.shutdown()
+
+
+async def test_stall_without_handle_replays_context_in_fresh_session(tmp_path):
+    session, transport, connector, _, _ = make_session(tmp_path, stall_timeout_s=0.3)
+    await start(session, transport)
+    first = connector.sessions[0]
+    first.push(turn_complete_msg())  # greeting answered
+    await wait_until(lambda: transport.events("turn_complete"))
+    session._last_form = {"entity": "Contact", "fields": {"Last Name": "Okafor"}}
+    await session.send_typed_text("her email is maya@example.com")
+    await wait_until(lambda: len(connector.sessions) == 2, timeout=3)
+    assert connector.configs[1].session_resumption.handle is None
+    second = connector.sessions[1]
+    await wait_until(lambda: second.texts)
+    note = second.texts[0]
+    assert "maya@example.com" in note and "Okafor" in note and "get_screen" in note
+    await session.shutdown()
+
+
+async def test_stall_gives_up_after_two_recoveries_without_ending(tmp_path):
+    session, transport, connector, _, _ = make_session(tmp_path, stall_timeout_s=0.2)
+    await start(session, transport)
+    connector.sessions[0].push(resumption_msg("h1"))
+    await wait_until(lambda: transport.events("error"), timeout=4)
+    assert "say that again" in transport.events("error")[0]["message"]
+    assert len(connector.sessions) == 3  # two recoveries, then no more
+    await asyncio.sleep(0.5)
+    assert len(connector.sessions) == 3 and not session.closed
     await session.shutdown()

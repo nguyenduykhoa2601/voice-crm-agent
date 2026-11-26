@@ -32,6 +32,13 @@ def _int(name: str, default: int) -> int:
         return default
 
 
+def _float(name: str, default: float) -> float:
+    try:
+        return float(_str(name, str(default)))
+    except ValueError:
+        return default
+
+
 def _bool(name: str, default: bool) -> bool:
     raw = _str(name, "1" if default else "0").lower()
     return raw in {"1", "true", "yes", "on"}
@@ -59,6 +66,8 @@ class Settings:
     # Outer guard per tool call. Kept a little above crm.tools.TOOL_TIMEOUT_S (45 s)
     # so the tool layer's own, more specific timeout message normally wins.
     tool_timeout_s: int
+    # Reconnect if the model owes a reply and sends nothing for this long (0 disables).
+    live_stall_timeout_s: float
     session_max_minutes: int
     idle_timeout_s: int  # end the session after this long without user audio/text
     metrics_path: Path
@@ -92,6 +101,7 @@ def load_settings() -> Settings:
         live_async_tools=_bool("LIVE_ASYNC_TOOLS", False),
         live_text_mode=_str("LIVE_TEXT_MODE", "auto").lower(),
         tool_timeout_s=_int("TOOL_TIMEOUT_S", 50),
+        live_stall_timeout_s=_float("LIVE_STALL_TIMEOUT_S", 10.0),
         session_max_minutes=_int("SESSION_MAX_MINUTES", 15),
         idle_timeout_s=_int("IDLE_TIMEOUT_S", 180),
         metrics_path=metrics_path,
