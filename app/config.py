@@ -41,11 +41,13 @@ def _bool(name: str, default: bool) -> bool:
 class Settings:
     gemini_api_key: str
     gemini_live_model: str  # empty → auto-select
-    gemini_text_model: str
     espo_url: str
     max_sessions: int
     headless: bool
+    low_memory: bool  # small instance (Render free tier): lazy Chromium, lighter screencast
     port: int
+    # Comma-separated Origin allow-list for /ws; empty → only the page's own host.
+    allowed_origins: tuple[str, ...]
     # Voice / Live tuning
     live_voice: str
     vad_start_sensitivity: str  # "high" | "low"
@@ -54,7 +56,9 @@ class Settings:
     vad_silence_duration_ms: int
     live_async_tools: bool  # NON_BLOCKING function declarations (model dependent)
     live_text_mode: str  # "auto" | "client_content" | "realtime"
-    tool_timeout_s: int  # outer guard; the tool layer has its own per-step timeouts
+    # Outer guard per tool call. Kept a little above crm.tools.TOOL_TIMEOUT_S (45 s)
+    # so the tool layer's own, more specific timeout message normally wins.
+    tool_timeout_s: int
     session_max_minutes: int
     idle_timeout_s: int  # end the session after this long without user audio/text
     metrics_path: Path
@@ -71,12 +75,15 @@ def load_settings() -> Settings:
     return Settings(
         gemini_api_key=_str("GEMINI_API_KEY") or _str("GOOGLE_API_KEY"),
         gemini_live_model=_str("GEMINI_LIVE_MODEL"),
-        gemini_text_model=_str("GEMINI_TEXT_MODEL", "gemini-2.5-flash"),
         espo_url=_str("ESPO_URL", "https://demo.us.espocrm.com").rstrip("/"),
         # Render's free tier has 512 MB RAM: default to one browser context there.
         max_sessions=max(1, _int("MAX_SESSIONS", 1 if os.getenv("RENDER") else 3)),
         headless=_bool("HEADLESS", True),
+        low_memory=_bool("LOW_MEMORY", False),
         port=_int("PORT", 7860),
+        allowed_origins=tuple(
+            o.strip().rstrip("/") for o in _str("ALLOWED_ORIGINS").split(",") if o.strip()
+        ),
         live_voice=_str("LIVE_VOICE", "Kore"),
         vad_start_sensitivity=_str("VAD_START_SENSITIVITY", "high").lower(),
         vad_end_sensitivity=_str("VAD_END_SENSITIVITY", "high").lower(),

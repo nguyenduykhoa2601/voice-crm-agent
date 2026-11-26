@@ -259,14 +259,12 @@ class LiveAgent:
         models: Sequence[str],
         config_factory: Callable[[str | None], types.LiveConnectConfig],
         events: LiveEvents,
-        kickoff_text: str | None = None,
         text_mode: str = "auto",
     ) -> None:
         self._connect = connect
         self._models = list(models)
         self._config_factory = config_factory
         self._events = events
-        self._kickoff_text = kickoff_text
         self._text_mode = text_mode
 
         self.model: str | None = None
@@ -421,8 +419,6 @@ class LiveAgent:
                         remember_working_model(model)
                         log.info("Live connected: model=%s", model)
                         self._connected_once.set()
-                        if self._kickoff_text:
-                            await self.send_text(self._kickoff_text)
                     else:
                         log.info("Live resumed (handle=%s)", bool(self._handle))
                         await self._events.on_status("ready", "Reconnected")

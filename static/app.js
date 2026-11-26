@@ -44,6 +44,7 @@ const speakingBars = Array.from(els.speaking.querySelectorAll(".speaking-bars i"
 
 const state = {
   phase: "idle", // idle | connecting | active
+  serverReady: false, // the server accepts typed text only after status "ready"
   ws: null,
   endedByUser: false,
   audioCtx: null,
@@ -90,13 +91,17 @@ function setPhase(phase) {
   els.callBtnLabel.textContent =
     phase === "idle" ? "Start call" : phase === "connecting" ? "Connecting…" : "End call";
   const live = phase === "active";
-  els.textInput.disabled = !live;
-  els.sendBtn.disabled = !live;
-  els.textInput.placeholder = live
+  if (!live) state.serverReady = false;
+  const canType = live && state.serverReady;
+  els.textInput.disabled = !canType;
+  els.sendBtn.disabled = !canType;
+  els.textInput.placeholder = canType
     ? state.micAvailable
       ? "Or type a message…"
       : "Type a message to the agent…"
-    : "Start a call, then type or talk…";
+    : live
+      ? "Connecting the agent…"
+      : "Start a call, then type or talk…";
   els.micBtn.disabled = !live || !state.micAvailable;
   els.liveBadge.hidden = !live;
   updateMicUi();
@@ -125,10 +130,13 @@ async function startCall() {
     state.micAvailable = false;
     state.micOn = false;
     const denied = err && (err.name === "NotAllowedError" || err.name === "SecurityError");
+    const noAudio = err && err.name === "AudioUnavailable";
     addSystemNote(
       denied
         ? "Microphone access was blocked. You can still type below, or allow the mic in your browser and start again."
-        : "No microphone found. You can still type messages below.",
+        : noAudio
+          ? "Audio is unavailable in this browser, so the microphone can't be used. You can still type messages below."
+          : "No microphone found. You can still type messages below.",
       true,
     );
   }
@@ -288,7 +296,11 @@ function flashWarning(message) {
 
 function onStatus(msg) {
   const s = msg.state;
-  if (s === "ready") setStatus("ready", STATUS_TEXT.ready);
+  if (s === "ready") {
+    setStatus("ready", STATUS_TEXT.ready);
+    state.serverReady = true;
+    setPhase(state.phase);
+  }
   else if (s === "starting") setStatus("starting", msg.message || STATUS_TEXT.starting);
   else if (s === "busy") {
     setStatus("busy", msg.message || STATUS_TEXT.busy);
@@ -434,8 +446,13 @@ function humanizeTool(name) {
 
 function defaultSummary(name, args) {
   if (!args || typeof args !== "object") return "";
-  if (name === "fill_fields" && args.fields && typeof args.fields === "object") {
-    return Object.entries(args.fields).map(([k, v]) => `${k}: ${v}`).join(", ");
+  if (name === "fill_fields") {
+    // Declared shape: {fields: [{field, value}]}; {fields: {name: value}} is tolerated too.
+    const fields = args.fields ?? args;
+    const pairs = Array.isArray(fields)
+      ? fields.filter((f) => f && typeof f === "object").map((f) => [f.field, f.value])
+      : fields && typeof fields === "object" ? Object.entries(fields) : [];
+    return pairs.map(([k, v]) => `${k}: ${v}`).join(", ");
   }
   return Object.entries(args)
     .filter(([, v]) => v !== null && v !== undefined && typeof v !== "object")
@@ -617,7 +634,11 @@ async function setupMic() {
     err.name = "NotFoundError";
     throw err;
   }
-  if (!state.audioCtx) throw new Error("Audio context unavailable");
+  if (!state.audioCtx) {
+    const err = new Error("Audio context unavailable");
+    err.name = "AudioUnavailable";
+    throw err;
+  }
   const stream = await navigator.mediaDevices.getUserMedia({
     audio: {
       channelCount: 1,

@@ -54,13 +54,27 @@ TOOL_DECLARATIONS: list[dict[str, Any]] = [
         "name": "open_create_form",
         "description": (
             "Open the empty 'create' form for a new record of the given entity. Returns the form's fields "
-            "and which are required. Unsaved changes on a form that is currently open are discarded."
+            "and which are required. Unsaved changes on a form that is currently open are discarded. "
+            "If the user already gave values, pass them in `fields` so the form is opened and filled in "
+            "one step (same format as fill_fields; values are read back)."
         ),
         "parameters": {
             "type": "OBJECT",
             "properties": {
                 "entity": {"type": "STRING", "enum": _ENTITY_ENUM,
                            "description": "Record type to create."},
+                "fields": {
+                    "type": "ARRAY",
+                    "description": "Optional values the user already gave, filled right after the form opens.",
+                    "items": {
+                        "type": "OBJECT",
+                        "properties": {
+                            "field": {"type": "STRING", "description": "Field name or label, e.g. lastName."},
+                            "value": {"type": "STRING", "description": "Value to enter."},
+                        },
+                        "required": ["field", "value"],
+                    },
+                },
             },
             "required": ["entity"],
         },
@@ -763,7 +777,17 @@ async def tool_get_screen(session: CrmSession, uimap: UiMap) -> dict:
     return await _describe_screen(session, uimap)
 
 
-async def tool_open_create_form(session: CrmSession, uimap: UiMap, entity: str) -> dict:
+async def tool_open_create_form(session: CrmSession, uimap: UiMap, entity: str, fields: Any = None) -> dict:
+    opened = await _open_create_form(session, uimap, entity)
+    if not opened["ok"] or not _normalize_fields_arg(fields):
+        return opened
+    filled = await tool_fill_fields(session, uimap, fields)
+    # Keep it short (the values matter now) and drop "empty": the form is no longer empty.
+    head = opened["observation"].split(" Fields:")[0].replace("(empty, not saved)", "(not saved)")
+    return {**opened, **filled, "observation": head + " " + filled["observation"]}
+
+
+async def _open_create_form(session: CrmSession, uimap: UiMap, entity: str) -> dict:
     ent = uimap.resolve_entity(entity)
     if not ent:
         return {"ok": False, "observation": f"Unknown entity '{entity}'. Supported: {', '.join(uimap.entity_names)}."}
@@ -787,8 +811,10 @@ async def tool_fill_fields(session: CrmSession, uimap: UiMap, fields: Any) -> di
         return {"ok": False, "observation": "No fields given. Pass fields as [{field, value}]."}
     st = await _state(session)
     if st["kind"] not in ("create", "edit"):
-        return {"ok": False, "observation": f"No form is open (current page: {st['kind']} {st['entity']}). "
-                                            "Open a create form or click Edit first."}
+        return {"ok": False, "observation": f"Nothing was filled: no form is open (current page: {st['kind']} "
+                                            f"{st['entity']}). To create a record, call open_create_form now with "
+                                            "these values in its fields; to change a saved record, open it and "
+                                            "call edit_record first."}
     entity = st["entity"]
     results = []
     for key, value in _expand_full_name(uimap, entity, items):
@@ -835,11 +861,9 @@ async def _save(session: CrmSession, uimap: UiMap, st: dict, confirm_duplicate: 
     if st.get("modal") and confirm_duplicate and "save" in st["modal"]["buttons"]:
         # The duplicate warning is already open and the user confirmed.
         await _dismiss_modal(session, ("save",))
-        was_create = True
     else:
         if st["kind"] not in ("create", "edit"):
             return {"ok": False, "observation": f"There is no form to save (current page: {st['kind']} {st['entity']})."}
-        was_create = st["kind"] == "create"
         btn = await _visible(page, f"{RECORD} button[data-action='save']")
         if btn is None:
             return {"ok": False, "observation": "The Save button is not visible."}
@@ -987,7 +1011,10 @@ async def tool_open_record(session: CrmSession, uimap: UiMap, entity: str, recor
                     "observation": f"Several {ent} records match '{record}': {names}. Ask which one."}
         rid = pick["id"]
         if len(exact) > 1:
-            note = f"{len(exact)} records share this name; opened the most recent one."
+            note = f"{len(exact)} records share this name; opened the first one listed."
+        elif not exact:
+            note = (f"No record is named exactly '{record}'; opened the only close match "
+                    f"'{pick['name']}'. Confirm with the user that this is the right record before changing it.")
         link = await _visible(session.page, f"#main a.link[href='#{ent}/view/{rid}']")
         if link is not None:
             await session.mark_stale()
@@ -1041,6 +1068,21 @@ async def tool_set_stage(session: CrmSession, uimap: UiMap, stage: str,
         opts = ", ".join(uimap.option_labels("Opportunity", "stage"))
         return {"ok": False, "observation": f"'{stage}' is not a valid stage. Stages: {opts}."}
     if opportunity:
+        opportunity = opportunity.strip()
+        if not ID_RE.match(opportunity):
+            # Writes need an exact name (or id): never change a record picked by a fuzzy match.
+            found = await tool_find_records(session, uimap, "Opportunity", opportunity)
+            rows = found.get("records", [])
+            if not any(norm(r["name"]) == norm(opportunity) for r in rows):
+                if not rows:
+                    return {"ok": False, "observation": f"No Opportunity named '{opportunity}' was found. "
+                                                        "Nothing was changed."}
+                cands = "; ".join(f"{r['name']} (id {r['id']}"
+                                  + (f", stage {r['stage']}" if r.get("stage") else "") + ")" for r in rows[:3])
+                return {"ok": False, "records": rows[:3],
+                        "observation": f"No Opportunity is named exactly '{opportunity}'. Closest matches: "
+                                       f"{cands}. Nothing was changed. Ask the user to confirm which record, "
+                                       "then call set_stage with its exact name or id."}
         opened = await tool_open_record(session, uimap, "Opportunity", opportunity)
         if not opened["ok"]:
             return opened
@@ -1085,7 +1127,7 @@ _DISPATCH = {
 
 _ALLOWED_ARGS = {
     "get_screen": set(), "edit_record": set(), "cancel": set(),
-    "open_create_form": {"entity"}, "fill_fields": {"fields"}, "save": {"confirm_duplicate"},
+    "open_create_form": {"entity", "fields"}, "fill_fields": {"fields"}, "save": {"confirm_duplicate"},
     "find_records": {"entity", "query"}, "open_record": {"entity", "record"},
     "set_stage": {"stage", "opportunity"},
 }

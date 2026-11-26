@@ -153,3 +153,24 @@ def test_live_config_converts_for_gemini_api():
     assert setup["contextWindowCompression"]["sliding_window"] == {}
     fd = setup["tools"][0]["functionDeclarations"][0]
     assert fd["name"] == "save" and fd["behavior"] == "NON_BLOCKING"
+
+
+def test_friendly_live_error_only_flags_real_quota_errors():
+    from app.session import _friendly_live_error
+
+    limit = "The voice service is at its free-tier limit. Please retry in a minute."
+    assert _friendly_live_error(RuntimeError("429 RESOURCE_EXHAUSTED")) == limit
+    assert _friendly_live_error(RuntimeError("1011 You exceeded your current quota")) == limit
+    assert _friendly_live_error(RuntimeError("rate limit reached")) == limit
+    wrong_model = "models/x is not supported for bidiGenerateContent"
+    assert _friendly_live_error(RuntimeError(wrong_model)) != limit
+    assert _friendly_live_error(RuntimeError("operation was separated")) != limit
+
+
+def test_fill_items_accepts_all_arg_shapes():
+    from app.session import fill_items
+
+    expected = [("lastName", "Smith")]
+    assert fill_items({"fields": [{"field": "lastName", "value": "Smith"}]}) == expected
+    assert fill_items({"fields": {"lastName": "Smith"}}) == expected
+    assert fill_items({"lastName": "Smith"}) == expected

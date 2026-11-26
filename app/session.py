@@ -16,6 +16,7 @@ import asyncio
 import contextlib
 import json
 import logging
+import re
 import time
 import uuid
 from array import array
@@ -27,6 +28,7 @@ from google.genai import types
 
 from app import prompts
 from app.config import Settings, settings as default_settings
+from app.crm.ui_map import norm
 from app.live import LiveAgent, LiveError, build_live_config, candidate_models, make_client
 from app.metrics import MetricsStore, get_store
 
@@ -39,11 +41,17 @@ FRAME_KIND = b"\x02"
 SPEECH_RMS = 500
 NUDGE_AFTER_S = 10.0
 SUMMARY_MAX = 160
+MAX_TEXT_CHARS = 1000  # typed messages longer than this are rejected
 
 NUDGE_TEXT = (
-    "[The user has been silent for about 10 seconds. Give one very short nudge "
-    "(e.g. 'Still there? You can tell me the email, or skip it.') and then wait.]"
+    "[The user has been silent for about 10 seconds. Give one very short nudge that fits "
+    "what is on screen right now (for example offer the next step or ask if they are still "
+    "there), then wait.]"
 )
+
+# Write tools are never cancelled half-way: if the model cancels one while it runs
+# (barge-in), it finishes and the model is told the real outcome.
+NON_CANCELLABLE = {"save", "set_stage"}
 
 
 class Transport(Protocol):
@@ -141,6 +149,7 @@ class Session:
         self.crm: Any = None
         self.live: LiveAgent | None = None
         self.started = False
+        self._ready = asyncio.Event()  # set once self.live and self.crm are both usable
         self._slot_held = False
         self._closed = False
         self._t0 = time.monotonic()
@@ -156,10 +165,14 @@ class Session:
         self.frames_dropped = 0
 
         # Tools
-        self._tool_lock = asyncio.Lock()  # one shared page per session
+        # Runs whole tool_call batches in order. (crm.tools.run_tool also locks the
+        # page per call; that one protects callers without a Session, e.g. evals.)
+        self._tool_lock = asyncio.Lock()
         self._tool_tasks: set[asyncio.Task] = set()
-        self._running_calls: dict[str, asyncio.Task] = {}
+        self._running_calls: dict[str, tuple[str, asyncio.Task]] = {}  # id -> (name, task)
         self._cancelled_ids: set[str] = set()
+        self._interrupted_tool: str | None = None  # a tool cancelled part-way
+        self._text_lock = asyncio.Lock()  # keeps typed messages in order
 
         # Turn / activity tracking
         self._turn = TurnStats()
@@ -189,12 +202,18 @@ class Session:
                 self._spawn(self.start())
         elif kind == "text":
             text = str(msg.get("text") or "").strip()
-            if text:
-                await self.send_typed_text(text)
+            if len(text) > MAX_TEXT_CHARS:
+                await self.send_event(
+                    "error", message=f"Message is too long (max {MAX_TEXT_CHARS} characters)."
+                )
+            elif text:
+                # Not awaited: during a reconnect the send can wait several seconds,
+                # and the receive loop must keep handling audio and "stop".
+                self._spawn(self.send_typed_text(text))
         elif kind == "mic":
             self._mic_on = bool(msg.get("on"))
             if not self._mic_on and self.live is not None:
-                await self.live.end_audio_stream()
+                self._spawn(self.live.end_audio_stream())
         elif kind == "stop":
             self._end_reason = "stop"
             return False
@@ -218,7 +237,8 @@ class Session:
         self._turn = TurnStats(user_end=now, source="text", wait_boundary=speaking)
         # The client renders typed messages itself; do not echo them back.
         try:
-            await self.live.send_text(text)
+            async with self._text_lock:
+                await self.live.send_text(text)
         except Exception as exc:
             log.warning("[%s] send_text failed: %s", self.id, exc)
             await self.send_event("error", message="Could not send the message to the agent.")
@@ -336,11 +356,17 @@ class Session:
             await self._fail(f"Could not start the session: {_short(exc, 200)}")
             return
 
+        self._ready.set()
         self.metrics.record("session_start", session_id=self.id, model=self.live.model)
         self._mark_user_activity()
         self._spawn(self._watch_live())
         self._spawn(self._idle_watchdog())
         await self.send_event("status", state="ready", message=f"Connected ({self.live.model})")
+        # Greet only now: the CRM is on screen and tool calls can run.
+        try:
+            await self.live.send_text(prompts.GREETING_KICKOFF)
+        except Exception as exc:
+            log.warning("[%s] greeting kickoff failed: %s", self.id, exc)
 
     async def _fail(self, message: str) -> None:
         await self.send_event("error", message=message)
@@ -515,6 +541,7 @@ class Session:
 
     async def on_turn_complete(self) -> None:
         self._agent_busy = bool(self._tool_tasks)
+        self._audio_carry = b""
         self._last_turn_end = time.monotonic()
         await self.send_event("turn_complete")
         t = self._turn
@@ -558,22 +585,29 @@ class Session:
     async def on_tool_cancel(self, ids: list[str]) -> None:
         for call_id in ids:
             self._cancelled_ids.add(call_id)
-            running = self._running_calls.get(call_id)
-            if running is not None and not running.done():
+            name, running = self._running_calls.get(call_id, ("", None))
+            if running is not None and not running.done() and name not in NON_CANCELLABLE:
                 running.cancel()
 
     # ------------------------------------------------------------------ tools
 
     async def _run_calls(self, calls: list[types.FunctionCall]) -> None:
-        """Run one tool_call message's calls in order and answer them together."""
-        assert self.live is not None
+        """Run one tool_call message's calls in order and answer them together.
+
+        Every call gets a response, an error result if something unexpected fails,
+        so the model is never left waiting. Calls the model cancelled get none.
+        """
+        ids = [call.id or uuid.uuid4().hex[:8] for call in calls]
+        responses: dict[str, types.FunctionResponse] = {}
+        notes: list[str] = []  # outcomes of cancelled write tools, sent as text
+        await self._ready.wait()  # tools need both self.live and self.crm
         live = self.live
+        if live is None:  # cannot happen once _ready is set
+            return
         live.tool_started()
-        responses: list[types.FunctionResponse] = []
         try:
             async with self._tool_lock:
-                for call in calls:
-                    call_id = call.id or uuid.uuid4().hex[:8]
+                for call_id, call in zip(ids, calls):
                     name = call.name or ""
                     args = dict(call.args or {})
                     if call_id in self._cancelled_ids:
@@ -582,15 +616,32 @@ class Session:
                     result = await self._run_one(call_id, name, args)
                     if result is None:  # cancelled while running
                         continue
-                    responses.append(self._function_response(call.id, name, result))
-            if responses and not self._closed:
-                await live.send_tool_responses(responses)
+                    if call_id in self._cancelled_ids:  # a write tool that finished anyway
+                        notes.append(
+                            f"[System note: the {name} action you started before the "
+                            f"interruption did finish. Result: {_short(result.get('observation'), 300)}]"
+                        )
+                        continue
+                    responses[call_id] = self._function_response(call.id, name, result)
         except asyncio.CancelledError:
             raise
         except Exception:
             log.exception("[%s] tool batch failed", self.id)
+            error = {"ok": False, "observation": "Internal error while running this action. "
+                     "Call get_screen to check the current state."}
+            for call_id, call in zip(ids, calls):
+                if call_id not in responses and call_id not in self._cancelled_ids:
+                    responses[call_id] = self._function_response(call.id, call.name or "", error)
         finally:
             live.tool_finished()
+        if self._closed:
+            return
+        try:
+            await live.send_tool_responses(list(responses.values()))
+            for note in notes:
+                await live.send_text(note)
+        except Exception as exc:
+            log.warning("[%s] could not send tool results: %s", self.id, exc)
 
     def _function_response(
         self, call_id: str | None, name: str, result: dict[str, Any]
@@ -609,7 +660,7 @@ class Session:
         await self._emit_action(call_id, name, args, "running", "", None)
         t0 = time.monotonic()
         inner = asyncio.create_task(self._invoke_tool(name, args))
-        self._running_calls[call_id] = inner
+        self._running_calls[call_id] = (name, inner)
         cancelled = False
         try:
             result = await inner
@@ -629,7 +680,14 @@ class Session:
         summary = "Cancelled" if cancelled else _short(result.get("observation") or result.get("error"))
         await self._emit_action(call_id, name, args, "ok" if ok else "error", summary, round(ms))
         if cancelled:
+            self._interrupted_tool = name
             return None
+        if self._interrupted_tool:
+            result["observation"] = (
+                f"(Note: the earlier {self._interrupted_tool} was interrupted part-way; "
+                f"check the screen.) {result.get('observation', '')}"
+            )
+            self._interrupted_tool = None
         self._track_outcome(name, args, result)
         await self._emit_form(result)
         log.info("[%s] tool %s ok=%s %.0fms args=%s obs=%s", self.id, name, ok, ms, args, summary)
@@ -680,10 +738,6 @@ class Session:
                 fields=form.get("fields") or {},
                 url=form.get("url"),
             )
-        elif isinstance(result.get("fields"), dict) and result.get("entity"):
-            await self.send_event(
-                "form", entity=result.get("entity"), fields=result["fields"], url=result.get("url")
-            )
 
     def _track_outcome(self, name: str, args: dict[str, Any], result: dict[str, Any]) -> None:
         o = self.outcome
@@ -691,9 +745,9 @@ class Session:
         if name in {"open_create_form", "open_record"} and ok:
             o.current_fields = {}
         elif name == "fill_fields":
-            fields = args.get("fields") if isinstance(args.get("fields"), dict) else args
-            for key, value in (fields or {}).items():
-                new = str(value).strip().lower()
+            for field_name, value in fill_items(args):
+                key = norm(field_name)  # "lastName" and "Last Name" are the same field
+                new = value.strip().lower()
                 old = o.current_fields.get(key)
                 if old is not None and old != new:
                     o.corrections += 1
@@ -713,10 +767,31 @@ class Session:
             o.current_fields = {}
 
 
+def fill_items(args: dict[str, Any]) -> list[tuple[str, str]]:
+    """fill_fields args as (field, value) pairs.
+
+    The declared shape is {"fields": [{"field": ..., "value": ...}]};
+    {"fields": {name: value}} and a flat {name: value} are tolerated too.
+    """
+    raw = args.get("fields", args)
+    if isinstance(raw, dict):
+        return [(str(k), "" if v is None else str(v)) for k, v in raw.items()]
+    if isinstance(raw, list):
+        return [
+            (str(it["field"]), "" if it.get("value") is None else str(it["value"]))
+            for it in raw
+            if isinstance(it, dict) and it.get("field")
+        ]
+    return []
+
+
+_QUOTA_ERROR = re.compile(r"\b(429|resource_exhausted|quota|rate[ _-]?limit(ed)?)\b")
+
+
 def _friendly_live_error(exc: BaseException) -> str:
     text = str(exc)
     low = text.lower()
-    if "429" in low or "quota" in low or "resource_exhausted" in low or "rate" in low:
+    if _QUOTA_ERROR.search(low):
         return "The voice service is at its free-tier limit. Please retry in a minute."
     if "api key" in low or "permission" in low or "401" in low or "403" in low:
         return "The voice service rejected the server's API key."
@@ -748,7 +823,6 @@ async def _default_live_factory(session: Session) -> LiveAgent:
         models=models,
         config_factory=config_factory,
         events=session,
-        kickoff_text=prompts.GREETING_KICKOFF,
         text_mode=s.live_text_mode,
     )
     await agent.start()

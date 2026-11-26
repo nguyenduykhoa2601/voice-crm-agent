@@ -138,9 +138,9 @@
         "fields": {
           "firstName": "Daniel",
           "lastName": "Reyes",
-          "phoneNumber": "2125550143",
-          "title": "Head of Sales"
-        }
+          "phoneNumber": "2125550143"
+        },
+        "note": "The demo's Contact form has no Title field, so the job title is not checked; the agent should say it cannot be set on this form instead of asking again."
       }
     },
     {
@@ -671,9 +671,9 @@
         },
         "fields": {
           "firstName": "Lena",
-          "lastName": "Fischer",
-          "title": "CTO"
-        }
+          "lastName": "Fischer"
+        },
+        "note": "The demo's Contact form has no Title field, so the job title is not checked; the agent should say it cannot be set on this form instead of asking again."
       }
     },
     {

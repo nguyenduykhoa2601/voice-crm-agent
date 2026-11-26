@@ -1,0 +1,26 @@
+# Keeps the Render free instance awake (it sleeps after 15 min without traffic).
+# Disabled by default: set the repository variables
+#   KEEPWARM_ENABLED = true
+#   KEEPWARM_URL     = https://<service>.onrender.com
+# (Settings -> Secrets and variables -> Actions -> Variables) to turn it on.
+name: keepwarm
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  ping:
+    if: ${{ vars.KEEPWARM_ENABLED == 'true' && vars.KEEPWARM_URL != '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Ping /healthz
+        env:
+          URL: ${{ vars.KEEPWARM_URL }}
+        run: |
+          curl --silent --show-error --fail --retry 3 --retry-delay 20 --max-time 120 \
+            "${URL%/}/healthz"

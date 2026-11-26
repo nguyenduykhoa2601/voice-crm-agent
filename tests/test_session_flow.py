@@ -7,8 +7,8 @@ import dataclasses
 import json
 
 import pytest
-from google.genai import types
 
+from app import prompts, session as session_mod
 from app.config import settings
 from app.live import LiveAgent, build_live_config
 from app.metrics import MetricsStore
@@ -35,7 +35,9 @@ DECLS = [
     {"name": "open_create_form", "description": "Open a create form.",
      "parameters": {"type": "OBJECT", "properties": {"entity": {"type": "STRING"}}}},
     {"name": "fill_fields", "description": "Fill fields.",
-     "parameters": {"type": "OBJECT", "properties": {"fields": {"type": "OBJECT"}}}},
+     "parameters": {"type": "OBJECT", "properties": {"fields": {
+         "type": "ARRAY", "items": {"type": "OBJECT", "properties": {
+             "field": {"type": "STRING"}, "value": {"type": "STRING"}}}}}}},
     {"name": "save", "description": "Save.", "parameters": {"type": "OBJECT", "properties": {}}},
 ]
 
@@ -74,7 +76,6 @@ def make_session(tmp_path, *, connector=None, tools=None, browser=None, model="g
                 system_instruction="test", tool_declarations=DECLS, resumption_handle=handle
             ),
             events=session,
-            kickoff_text="[greet]",
         )
         await agent.start(timeout=2)
         return agent
@@ -98,6 +99,9 @@ async def start(session: Session, transport: FakeTransport):
     session.start_writer()
     assert await session.handle_client_text(json.dumps({"type": "start"}))
     await wait_until(lambda: any(e.get("state") == "ready" for e in transport.events("status")))
+    # The greeting kickoff follows "ready".
+    live = session.live._session
+    await wait_until(lambda: live.texts or live.client_contents)
 
 
 async def test_start_greets_forwards_frames_and_pumps_mic(tmp_path):
@@ -106,7 +110,7 @@ async def test_start_greets_forwards_frames_and_pumps_mic(tmp_path):
     live = connector.sessions[0]
 
     # Kickoff greeting goes out as realtime text for 3.x models.
-    assert live.texts == ["[greet]"]
+    assert live.texts == [prompts.GREETING_KICKOFF]
     # The first screencast frame reached the client as 0x02 + jpeg.
     await wait_until(lambda: FRAME_KIND + b"f0" in transport.binary)
 
@@ -117,7 +121,7 @@ async def test_start_greets_forwards_frames_and_pumps_mic(tmp_path):
 
     # Mic off → audio_stream_end
     await session.handle_client_text(json.dumps({"type": "mic", "on": False}))
-    assert live.audio_stream_ends == 1
+    await wait_until(lambda: live.audio_stream_ends == 1)
 
     await session.shutdown()
     assert browser.crm.closed and session.closed
@@ -169,14 +173,14 @@ async def test_tool_call_runs_tool_and_sends_response(tmp_path):
 
     live.push(tool_call_msg(
         ("c1", "open_create_form", {"entity": "Contact"}),
-        ("c2", "fill_fields", {"fields": {"lastName": "Smith"}}),
+        ("c2", "fill_fields", {"fields": [{"field": "lastName", "value": "Smith"}]}),
     ))
     await wait_until(lambda: live.tool_responses)
 
     # Executed in order, against the session's CRM page.
     assert [(c[1], c[2]) for c in tools.calls] == [
         ("open_create_form", {"entity": "Contact"}),
-        ("fill_fields", {"fields": {"lastName": "Smith"}}),
+        ("fill_fields", {"fields": [{"field": "lastName", "value": "Smith"}]}),
     ]
     assert all(c[0] is browser.crm for c in tools.calls)
     # One tool response message answering both calls, ids preserved.
@@ -415,4 +419,122 @@ async def test_text_sent_while_agent_speaking_waits_for_turn_boundary(tmp_path):
     live.push(turn_complete_msg())
     await wait_until(lambda: transport.events("metrics"))
     assert transport.events("metrics")[0]["first_audio_ms"] >= 40
+    await session.shutdown()
+
+
+class SlowBrowser(FakeBrowser):
+    """CRM login that only finishes when the test opens the gate."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.gate = asyncio.Event()
+
+    async def new_session(self, on_frame):
+        await self.gate.wait()
+        return await super().new_session(on_frame)
+
+
+async def test_greeting_and_tools_wait_until_crm_is_ready(tmp_path):
+    browser = SlowBrowser()
+    session, transport, connector, tools, _ = make_session(tmp_path, browser=browser)
+    session.start_writer()
+    await session.handle_client_text(json.dumps({"type": "start"}))
+    await wait_until(lambda: connector.sessions)  # Live is up, the CRM is still logging in
+    live = connector.sessions[0]
+    await asyncio.sleep(0.05)
+    assert live.texts == []  # no greeting before the CRM is on screen
+
+    live.push(tool_call_msg(("early", "open_create_form", {"entity": "Contact"})))
+    await asyncio.sleep(0.05)
+    assert tools.calls == []  # waits instead of crashing on a missing CRM page
+
+    browser.gate.set()
+    await wait_until(lambda: live.tool_responses)
+    assert tools.calls[0][0] is browser.crm
+    assert live.tool_responses[0][0].id == "early"
+    assert live.texts == [prompts.GREETING_KICKOFF]
+    await session.shutdown()
+
+
+async def test_unexpected_batch_error_still_answers_every_call(tmp_path):
+    session, transport, connector, _, _ = make_session(tmp_path)
+    await start(session, transport)
+    live = connector.sessions[0]
+
+    def broken(*_args):
+        raise RuntimeError("bug in bookkeeping")
+
+    session._track_outcome = broken
+    live.push(tool_call_msg(("a", "get_screen", {}), ("b", "save", {})))
+    await wait_until(lambda: live.tool_responses)
+    responses = live.tool_responses[0]
+    assert [r.id for r in responses] == ["a", "b"]
+    assert all(r.response["ok"] is False for r in responses)
+    await session.shutdown()
+
+
+async def test_corrections_counted_per_field_with_list_args(tmp_path):
+    session, transport, connector, _, _ = make_session(tmp_path)
+    await start(session, transport)
+    live = connector.sessions[0]
+    live.push(tool_call_msg(("a", "open_create_form", {"entity": "Contact"})))
+    live.push(tool_call_msg(("b", "fill_fields", {"fields": [
+        {"field": "firstName", "value": "Maya"}, {"field": "lastName", "value": "Smith"}]})))
+    live.push(tool_call_msg(("c", "fill_fields", {"fields": [
+        {"field": "emailAddress", "value": "maya@example.com"}]})))
+    await wait_until(lambda: len(live.tool_responses) == 3)
+    assert session.outcome.corrections == 0  # new fields are not corrections
+
+    live.push(tool_call_msg(("d", "fill_fields", {"fields": [
+        {"field": "Last Name", "value": "Smyth"}]})))  # label form of lastName
+    await wait_until(lambda: len(live.tool_responses) == 4)
+    assert session.outcome.corrections == 1
+    await session.shutdown()
+
+
+async def test_cancelled_save_finishes_and_model_is_told(tmp_path):
+    tools = ToolRecorder()
+    tools.release = asyncio.Event()
+    session, transport, connector, _, _ = make_session(tmp_path, tools=tools)
+    await start(session, transport)
+    live = connector.sessions[0]
+
+    live.push(tool_call_msg(("s1", "save", {})))
+    await wait_until(lambda: tools.calls)
+    live.push(cancel_msg("s1"))  # user barged in while saving
+    await asyncio.sleep(0.05)
+    tools.release.set()
+    await wait_until(lambda: any("did finish" in t for t in live.texts))
+
+    assert live.tool_responses == []  # the cancelled id is not answered
+    final = [a for a in transport.events("action") if a["id"] == "s1"][-1]
+    assert final["status"] == "ok" and "Saved" in final["summary"]
+    assert session.outcome.saves == 1
+    assert "Maya Okafor" in [t for t in live.texts if "did finish" in t][0]
+    await session.shutdown()
+
+
+async def test_long_typed_text_is_rejected(tmp_path):
+    session, transport, connector, _, _ = make_session(tmp_path)
+    await start(session, transport)
+    live = connector.sessions[0]
+    text = "x" * (session_mod.MAX_TEXT_CHARS + 1)
+    await session.handle_client_text(json.dumps({"type": "text", "text": text}))
+    await wait_until(lambda: transport.events("error"))
+    assert "too long" in transport.events("error")[0]["message"]
+    assert text not in live.texts
+    await session.shutdown()
+
+
+async def test_typed_text_does_not_block_receive_loop(tmp_path):
+    session, transport, connector, _, _ = make_session(tmp_path)
+    await start(session, transport)
+    live = connector.sessions[0]
+    session.live._ready.clear()  # as during a reconnect: sends would wait
+    await asyncio.wait_for(
+        session.handle_client_text(json.dumps({"type": "text", "text": "hello"})), 0.2)
+    await asyncio.wait_for(
+        session.handle_client_text(json.dumps({"type": "mic", "on": False})), 0.2)
+    session.live._ready.set()
+    await wait_until(lambda: "hello" in live.texts and live.audio_stream_ends == 1)
     await session.shutdown()

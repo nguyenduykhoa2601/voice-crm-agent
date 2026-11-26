@@ -9,8 +9,8 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import contextlib
 import logging
-import os
 import time
 from typing import Any, Awaitable, Callable, Optional
 
@@ -26,11 +26,12 @@ from playwright.async_api import (
 from playwright.async_api import Error as PlaywrightError
 from playwright.async_api import TimeoutError as PlaywrightTimeout
 
+from app.config import settings
+
 log = logging.getLogger(__name__)
 
 FrameCallback = Callable[[bytes], Awaitable[None]]
 
-DEFAULT_ESPO_URL = "https://demo.us.espocrm.com"
 VIEWPORT = {"width": 1280, "height": 800}
 ACTION_TIMEOUT_MS = 15_000
 NAV_TIMEOUT_MS = 45_000
@@ -55,6 +56,29 @@ CHROMIUM_ARGS = [
     "--js-flags=--max-old-space-size=256",
 ]
 
+# LOW_MEMORY=1 (set on Render's 512 MB free tier): one renderer process, no
+# site-isolation helpers, a smaller V8 heap and fewer background features.
+# Later flags override the defaults above (Chromium keeps the last value).
+LOW_MEMORY_ARGS = [
+    "--no-zygote",
+    "--renderer-process-limit=1",
+    "--disable-site-isolation-trials",
+    "--disable-features=site-per-process,IsolateOrigins,Translate,BackForwardCache,"
+    "MediaRouter,OptimizationHints,AudioServiceOutOfProcess",
+    "--disable-breakpad",
+    "--disable-hang-monitor",
+    "--disable-ipc-flooding-protection",
+    "--disable-client-side-phishing-detection",
+    "--disk-cache-size=33554432",
+    "--js-flags=--max-old-space-size=192",
+]
+
+
+def chromium_args() -> list[str]:
+    if settings.low_memory:
+        return CHROMIUM_ARGS + LOW_MEMORY_ARGS
+    return list(CHROMIUM_ARGS)
+
 # Third-party requests that only slow the demo down.
 BLOCKED_HOSTS = ("google-analytics.com", "googletagmanager.com", "doubleclick.net")
 
@@ -67,13 +91,6 @@ HIGHLIGHT_CSS = """
   transition: outline-color 0.2s ease;
 }
 """
-
-
-def _env_bool(name: str, default: bool) -> bool:
-    raw = (os.getenv(name) or "").strip().lower()
-    if not raw:
-        return default
-    return raw in {"1", "true", "yes", "on"}
 
 
 class CrmError(RuntimeError):
@@ -269,15 +286,20 @@ class CrmSession:
         return await self.page.screenshot(type="jpeg", quality=quality, timeout=10_000)
 
     # ------------------------------------------------------------------ screencast
-    async def start_screencast(self, on_frame: FrameCallback, quality: int = 60,
-                               every_nth_frame: int = 2) -> None:
+    async def start_screencast(self, on_frame: FrameCallback) -> None:
         """Stream JPEG frames of the page to `on_frame(jpeg_bytes)`.
 
         Chromium only emits frames when the page repaints, so an idle page sends
         nothing; an initial full screenshot is pushed right away. Frames are
         acknowledged immediately; if the callback is still busy with the previous
         frame, only the newest pending frame is kept (no unbounded queue).
+        On LOW_MEMORY instances frames are smaller and rarer to save CPU.
         """
+        if settings.low_memory:
+            quality, every_nth_frame, max_width = 50, 3, 960
+        else:
+            quality, every_nth_frame, max_width = 60, 2, VIEWPORT["width"]
+        max_height = VIEWPORT["height"] * max_width // VIEWPORT["width"]
         await self.stop_screencast()
         self._on_frame = on_frame
         self._cdp = await self.context.new_cdp_session(self.page)
@@ -285,8 +307,8 @@ class CrmSession:
         await self._cdp.send("Page.startScreencast", {
             "format": "jpeg",
             "quality": quality,
-            "maxWidth": VIEWPORT["width"],
-            "maxHeight": VIEWPORT["height"],
+            "maxWidth": max_width,
+            "maxHeight": max_height,
             "everyNthFrame": every_nth_frame,
         })
         try:
@@ -360,8 +382,8 @@ class CrmBrowser:
     """Owns one Playwright + Chromium process shared by all sessions."""
 
     def __init__(self, base_url: Optional[str] = None, headless: Optional[bool] = None):
-        self.base_url = (base_url or os.getenv("ESPO_URL") or DEFAULT_ESPO_URL).rstrip("/")
-        self.headless = _env_bool("HEADLESS", True) if headless is None else headless
+        self.base_url = (base_url or settings.espo_url).rstrip("/")
+        self.headless = settings.headless if headless is None else headless
         self._pw: Optional[Playwright] = None
         self._browser: Optional[Browser] = None
         self._lock = asyncio.Lock()
@@ -374,7 +396,7 @@ class CrmBrowser:
                 return self._browser
             if self._pw is None:
                 self._pw = await async_playwright().start()
-            self._browser = await self._pw.chromium.launch(headless=self.headless, args=CHROMIUM_ARGS)
+            self._browser = await self._pw.chromium.launch(headless=self.headless, args=chromium_args())
             return self._browser
 
     async def new_session(self, on_frame: Optional[FrameCallback] = None,
@@ -383,14 +405,20 @@ class CrmBrowser:
         browser = await self.start()
         context = await browser.new_context(viewport=VIEWPORT, locale="en-US",
                                             timezone_id="UTC", device_scale_factor=1)
-        context.set_default_timeout(ACTION_TIMEOUT_MS)
-        context.set_default_navigation_timeout(NAV_TIMEOUT_MS)
+        try:
+            context.set_default_timeout(ACTION_TIMEOUT_MS)
+            context.set_default_navigation_timeout(NAV_TIMEOUT_MS)
 
-        async def _block(route):
-            await route.abort()
+            async def _block(route):
+                await route.abort()
 
-        await context.route(lambda url: any(h in url for h in BLOCKED_HOSTS), _block)
-        page = await context.new_page()
+            await context.route(lambda url: any(h in url for h in BLOCKED_HOSTS), _block)
+            page = await context.new_page()
+        except BaseException:
+            # Failed or cancelled before the session owns the context: close it here.
+            with contextlib.suppress(Exception):
+                await context.close()
+            raise
 
         async def _on_dialog(dialog) -> None:
             # Native dialogs are only "leave page?" prompts; we always navigate on purpose.

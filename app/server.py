@@ -11,9 +11,10 @@ import contextlib
 import logging
 from contextlib import asynccontextmanager
 from typing import Any
+from urllib.parse import urlsplit
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.config import PROJECT_ROOT, settings
@@ -26,6 +27,11 @@ logging.basicConfig(
 log = logging.getLogger("app.server")
 
 STATIC_DIR = PROJECT_ROOT / "static"
+
+# /ws abuse limits. Real clients send ~2-4 KB mic chunks and short JSON messages.
+START_DEADLINE_S = 15.0  # close sockets that never send {"type": "start"}
+MAX_BINARY_BYTES = 64 * 1024
+MAX_TEXT_CHARS = 8 * 1024
 
 
 class SessionLimiter:
@@ -46,22 +52,43 @@ class SessionLimiter:
 
 
 limiter = SessionLimiter(settings.max_sessions)
-state: dict[str, Any] = {"browser": None, "browser_error": None}
+state: dict[str, Any] = {"browser": None, "browser_error": False}
 
 
 async def _start_browser() -> None:
+    """Create the shared browser. Chromium itself is (re)launched by
+    `CrmBrowser.new_session()`, so a failed warm-up here is retried on the next session."""
     try:
         from app.crm.browser import CrmBrowser
 
-        browser = CrmBrowser()
-        start = getattr(browser, "start", None)
-        if callable(start):
-            await start()
-        state["browser"] = browser
+        browser = CrmBrowser(base_url=settings.espo_url, headless=settings.headless)
+    except Exception:
+        state["browser_error"] = True
+        log.exception("CRM browser could not be created")
+        return
+    state["browser"] = browser
+    if settings.low_memory:
+        # On small instances Chromium is launched on the first session and
+        # closed again when the last one ends (see _release_browser_if_idle).
+        log.info("CRM browser created (lazy start: LOW_MEMORY=1)")
+        return
+    try:
+        await browser.start()
         log.info("CRM browser ready")
-    except Exception as exc:
-        state["browser_error"] = str(exc)
-        log.exception("CRM browser failed to start")
+    except Exception:
+        state["browser_error"] = True
+        log.exception("CRM browser warm-up failed; it will be retried on the next session")
+
+
+async def _release_browser_if_idle() -> None:
+    """Free Chromium's memory between sessions on small instances."""
+    browser = state.get("browser")
+    if not settings.low_memory or browser is None:
+        return
+    if limiter.active == 0 and browser.session_count == 0:
+        with contextlib.suppress(Exception):
+            await asyncio.wait_for(browser.close(), 15)
+            log.info("CRM browser closed (idle)")
 
 
 async def _warm_model_cache() -> None:
@@ -85,8 +112,7 @@ async def lifespan(_: FastAPI):
         browser = state.get("browser")
         if browser is not None:
             with contextlib.suppress(Exception):
-                stop = getattr(browser, "shutdown", None) or browser.close
-                await asyncio.wait_for(stop(), 15)
+                await asyncio.wait_for(browser.close(), 15)
         state["browser"] = None
 
 
@@ -94,12 +120,9 @@ app = FastAPI(title="Voice CRM Agent", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=STATIC_DIR, check_dir=False), name="static")
 
 
-@app.get("/", response_model=None)
-async def index() -> FileResponse | HTMLResponse:
-    page = STATIC_DIR / "index.html"
-    if page.exists():
-        return FileResponse(page)
-    return HTMLResponse("<h1>Voice CRM Agent</h1><p>UI not built yet.</p>")
+@app.get("/")
+async def index() -> FileResponse:
+    return FileResponse(STATIC_DIR / "index.html")
 
 
 @app.get("/healthz")
@@ -108,15 +131,27 @@ async def healthz() -> dict[str, Any]:
         "ok": True,
         "api_key": settings.has_api_key,
         "browser": state.get("browser") is not None,
-        "browser_error": state.get("browser_error"),
+        # Details are in the server log only (exception text can contain paths).
+        "browser_error": bool(state.get("browser_error")),
         "sessions": {"active": limiter.active, "max": limiter.limit},
     }
 
 
 @app.get("/api/metrics")
 async def api_metrics() -> JSONResponse:
-    summary = await asyncio.to_thread(get_store().summary)
+    summary = await asyncio.to_thread(get_store().cached_summary)
     return JSONResponse(summary)
+
+
+def origin_allowed(origin: str | None, host: str | None) -> bool:
+    """Cross-site WebSocket guard. Browsers always send Origin; other clients
+    (tests, evals) may omit it and are allowed."""
+    if not origin:
+        return True
+    origin = origin.rstrip("/")
+    if settings.allowed_origins:
+        return origin in settings.allowed_origins
+    return urlsplit(origin).netloc == (host or "")
 
 
 class _WsTransport:
@@ -135,6 +170,10 @@ class _WsTransport:
 
 @app.websocket("/ws")
 async def ws_endpoint(ws: WebSocket) -> None:
+    if not origin_allowed(ws.headers.get("origin"), ws.headers.get("host")):
+        log.warning("rejected /ws from origin %s", ws.headers.get("origin"))
+        await ws.close(code=1008)
+        return
     await ws.accept()
     session = Session(
         _WsTransport(ws),
@@ -143,16 +182,29 @@ async def ws_endpoint(ws: WebSocket) -> None:
         release_slot=limiter.release,
     )
     session.start_writer()
+    start_deadline = asyncio.get_running_loop().time() + START_DEADLINE_S
     try:
         while not session.closed:
-            message = await ws.receive()
+            timeout = None
+            if not session.started:
+                timeout = max(0.0, start_deadline - asyncio.get_running_loop().time())
+            message = await asyncio.wait_for(ws.receive(), timeout)
             if message.get("type") == "websocket.disconnect":
                 break
-            if message.get("bytes") is not None:
-                await session.handle_client_audio(message["bytes"])
-            elif message.get("text") is not None:
-                if not await session.handle_client_text(message["text"]):
+            data, text = message.get("bytes"), message.get("text")
+            if (data is not None and len(data) > MAX_BINARY_BYTES) or (
+                text is not None and len(text) > MAX_TEXT_CHARS
+            ):
+                log.warning("[%s] message too large; closing", session.id)
+                await ws.close(code=1009)
+                break
+            if data is not None:
+                await session.handle_client_audio(data)
+            elif text is not None:
+                if not await session.handle_client_text(text):
                     break
+    except asyncio.TimeoutError:
+        log.info("[%s] no start message within %.0fs; closing", session.id, START_DEADLINE_S)
     except WebSocketDisconnect:
         pass
     except Exception:
@@ -161,12 +213,19 @@ async def ws_endpoint(ws: WebSocket) -> None:
         await session.shutdown()
         with contextlib.suppress(Exception):
             await ws.close()
+        await _release_browser_if_idle()
 
 
 def main() -> None:
     import uvicorn
 
-    uvicorn.run("app.server:app", host="0.0.0.0", port=settings.port, log_level="info")
+    uvicorn.run(
+        "app.server:app",
+        host="0.0.0.0",
+        port=settings.port,
+        log_level="info",
+        ws_max_size=1 << 20,  # uvicorn's default is 16 MiB
+    )
 
 
 if __name__ == "__main__":

@@ -16,7 +16,7 @@ Reviewer's browser (static/)                       Server (app/, Python 3.12, Fa
 ## Layout
 ```
 app/
-  config.py        env settings (GEMINI_API_KEY, GEMINI_LIVE_MODEL, MAX_SESSIONS, ESPO_URL, HEADLESS, PORT=7860)
+  config.py        env settings (see "Env" below)
   server.py        FastAPI: GET / → static/index.html; /static; WS /ws; GET /healthz; GET /api/metrics
   session.py       orchestrates one reviewer session: client WS ⇄ live ⇄ tools ⇄ browser; emits events
   live.py          Gemini Live wrapper (google-genai SDK, client.aio.live.connect)
@@ -26,7 +26,7 @@ app/
   crm/tools.py     TOOL_DECLARATIONS (Gemini function declarations) + async implementations
   crm/ui_map.py    load/query ui_map.json
 crawler/crawl.py   crawls EspoCRM → data/ui_map.json (entities, fields, labels, types, enum options, actions)
-evals/run_evals.py scripted multi-turn scenarios (text mode) × N runs → evals/report.md + json
+evals/run_evals.py scripted multi-turn scenarios (text mode) × N runs → evals/REPORT.md + evals/results/*.json
 tests/             pytest: tools against live demo (marked `live`), unit tests for pure logic
 static/            index.html, app.js, audio-worklet.js, styles.css
 docs/              BRIEF.md, ARCHITECTURE.md, REQUIREMENTS.md, TECHNICAL_NOTES.md (→ PDF)
@@ -78,5 +78,18 @@ Field names/labels/enum options come from `data/ui_map.json` (crawler), with a s
 - Keep utterances short (voice).
 
 ## Env
-`GEMINI_API_KEY` (required), `GEMINI_LIVE_MODEL` (optional; else auto-pick first available live/native-audio model),
-`GEMINI_TEXT_MODEL` (evals), `ESPO_URL=https://demo.us.espocrm.com`, `MAX_SESSIONS=3`, `HEADLESS=1`, `PORT=7860`.
+Read by `app/config.py` (real environment variables win over `.env`).
+
+- Required: `GEMINI_API_KEY` (or `GOOGLE_API_KEY`).
+- Model and CRM: `GEMINI_LIVE_MODEL` (optional; empty = auto-pick the best available Live/native-audio model with
+  fallback), `ESPO_URL=https://demo.us.espocrm.com`.
+- Capacity and lifetime: `MAX_SESSIONS` (default 3; 1 when `RENDER` is set), `IDLE_TIMEOUT_S=180` (end a session
+  after this long without user audio/text), `SESSION_MAX_MINUTES=15`, `TOOL_TIMEOUT_S=50`.
+- Host: `PORT=7860`, `HEADLESS=1`, `LOW_MEMORY=0` (1 on small instances: lazy Chromium launch/close, low-memory
+  flags, lighter screencast), `ALLOWED_ORIGINS` (comma-separated Origin allow-list for `/ws`; empty = the page's
+  own host only), `METRICS_PATH=data/metrics.jsonl`.
+- Voice tuning: `LIVE_VOICE=Kore`, `VAD_START_SENSITIVITY=high`, `VAD_END_SENSITIVITY=high`,
+  `VAD_PREFIX_PADDING_MS=200`, `VAD_SILENCE_DURATION_MS=600`, `LIVE_ASYNC_TOOLS=0` (NON_BLOCKING tool declarations,
+  model dependent), `LIVE_TEXT_MODE=auto` (`auto` | `client_content` | `realtime`).
+
+`GEMINI_TEXT_MODEL` was removed: evals run against the Live model in typed-text mode.

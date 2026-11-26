@@ -6,6 +6,8 @@ Event kinds written to the JSONL file (one JSON object per line):
 - tool           {session_id, name, ms, ok}
 - outcome        {session_id, completed, saves, corrections, interventions, turns, tool_errors}
 - session_end    {session_id, duration_s, reason}
+
+Writes go through one background thread so the event loop never blocks on disk I/O.
 """
 
 from __future__ import annotations
@@ -14,6 +16,7 @@ import json
 import logging
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -38,14 +41,25 @@ def _round(value: float | None) -> float | None:
     return None if value is None else round(value, 1)
 
 
+SUMMARY_CACHE_S = 5.0
+
+
 class MetricsStore:
     def __init__(self, path: Path) -> None:
         self.path = Path(path)
         self._lock = threading.Lock()
+        # One worker keeps lines in order.
+        self._writer = ThreadPoolExecutor(max_workers=1, thread_name_prefix="metrics")
+        self._summary: tuple[float, dict[str, Any]] | None = None
 
     def record(self, kind: str, **fields: Any) -> dict[str, Any]:
+        """Queue one event for writing; returns immediately."""
         event = {"ts": round(time.time(), 3), "kind": kind, **fields}
         line = json.dumps(event, default=str, ensure_ascii=False)
+        self._writer.submit(self._append, line)
+        return event
+
+    def _append(self, line: str) -> None:
         try:
             with self._lock:
                 self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -53,9 +67,9 @@ class MetricsStore:
                     fh.write(line + "\n")
         except OSError as exc:  # metrics must never break a session
             log.warning("metrics write failed: %s", exc)
-        return event
 
     def events(self) -> list[dict[str, Any]]:
+        self._writer.submit(lambda: None).result()  # wait for queued writes
         if not self.path.exists():
             return []
         out: list[dict[str, Any]] = []
@@ -73,6 +87,13 @@ class MetricsStore:
 
     def summary(self) -> dict[str, Any]:
         return summarize(self.events())
+
+    def cached_summary(self) -> dict[str, Any]:
+        """summary(), recomputed at most every few seconds (the endpoint is public)."""
+        now = time.monotonic()
+        if self._summary is None or now - self._summary[0] > SUMMARY_CACHE_S:
+            self._summary = (now, self.summary())
+        return self._summary[1]
 
 
 def summarize(events: list[dict[str, Any]]) -> dict[str, Any]:

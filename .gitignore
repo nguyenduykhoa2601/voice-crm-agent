@@ -21,3 +21,7 @@ PROGRESS.md
 docs/BRIEF.md
 docs/SUBMISSION.md
 docs/TECHNICAL_NOTES_OUTLINE.md
+
+# eval runs (keep only the merged final results)
+evals/results/*.json
+!evals/results/final.json
