@@ -240,6 +240,19 @@ six runs) was the model replying without calling a tool in the first turn; it is
 `evals/REPORT.md`. Note that the before/after sets are not identical (the after set re-runs the core and previously
 failing scenarios), which the report states.
 
+**Model choice, measured.** The same harness made the model choice a measurement rather than a guess. A newer
+live model, `gemini-3.8-live`, speaks before it acts and cut first audio to about **1.0 s p50** (vs 2.9 s), but on
+the same scenarios it passed only **6 of 11** scored runs: it skipped the save after a correction, asked about
+optional fields instead of reading back, and once saved before the user confirmed. For an agent whose job is to be
+trusted on screen, I kept `gemini-3.1-flash-live-preview` (97% pass) as the default; the model is one environment
+variable, and closing that gap with prompt work is the cheapest latency win left.
+
+**Resilience found by the evals.** Long runs surfaced two failure modes I would not have found by hand: the preview
+service occasionally goes silent mid-conversation with no error, and the shared demo can invalidate the login. The
+server now treats 10 s of silence after a request as a stall, reconnects with the session-resumption handle and asks
+the model to answer the pending turn (at most twice, then it asks the user to repeat); a save rejected with HTTP 401
+logs in again and re-applies the form instead of telling the user to refresh.
+
 Reproduce: `uv run python -m evals.run_evals --runs 3` (or `--scenarios S01,S03`, `--tags correction`). Raw
 results go to `evals/results/`, the report to `evals/REPORT.md`.
 

@@ -409,7 +409,20 @@ class CrmBrowser:
 
     async def new_session(self, on_frame: Optional[FrameCallback] = None,
                           login: bool = True) -> CrmSession:
-        """Create an isolated, logged-in session. Starts the screencast if `on_frame` is given."""
+        """Create an isolated, logged-in session. Starts the screencast if `on_frame` is given.
+
+        If Chromium dies while the session is being set up (e.g. killed under memory
+        pressure), it is relaunched and the setup is retried once.
+        """
+        try:
+            return await self._new_session(on_frame, login)
+        except (CrmError, PlaywrightError):
+            if self._browser is not None and self._browser.is_connected():
+                raise
+            log.warning("Chromium disconnected during session setup; relaunching and retrying")
+            return await self._new_session(on_frame, login)
+
+    async def _new_session(self, on_frame: Optional[FrameCallback], login: bool) -> CrmSession:
         browser = await self.start()
         context = await browser.new_context(viewport=VIEWPORT, locale="en-US",
                                             timezone_id="UTC", device_scale_factor=1,
