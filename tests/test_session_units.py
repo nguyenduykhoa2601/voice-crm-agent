@@ -174,3 +174,42 @@ def test_fill_items_accepts_all_arg_shapes():
     assert fill_items({"fields": [{"field": "lastName", "value": "Smith"}]}) == expected
     assert fill_items({"fields": {"lastName": "Smith"}}) == expected
     assert fill_items({"lastName": "Smith"}) == expected
+
+
+class _LoggedOutPage:
+    async def evaluate(self, script, *args):
+        return [{"name": "name", "label": "Name", "value": "Maria Okafur", "required": True, "error": False},
+                {"name": "emailAddress", "label": "Email", "value": "m@example.com", "required": False,
+                 "error": False},
+                {"name": "phoneNumber", "label": "Phone", "value": "", "required": False, "error": False}]
+
+
+class _LoggedOutSession:
+    def __init__(self, login_fails: bool = False):
+        self.page = _LoggedOutPage()
+        self.login_fails = login_fails
+        self.logins = 0
+
+    async def login(self):
+        from app.crm.browser import CrmError
+
+        self.logins += 1
+        if self.login_fails:
+            raise CrmError("down")
+
+
+@pytest.mark.asyncio
+async def test_save_401_logs_in_again_and_explains_how_to_redo():
+    from app.crm.tools import _recover_logged_out_save
+
+    session = _LoggedOutSession()
+    result = await _recover_logged_out_save(session, {"kind": "create", "entity": "Contact", "url": "u"})
+    assert session.logins == 1
+    assert result["ok"] is False and result["saved"] is False and result["logged_out"] is True
+    obs = result["observation"]
+    assert "Name = 'Maria Okafur'" in obs and "Email = 'm@example.com'" in obs and "Phone" not in obs
+    assert "open_create_form" in obs and "refresh" in obs  # "Never ask the user to refresh"
+
+    failing = _LoggedOutSession(login_fails=True)
+    result = await _recover_logged_out_save(failing, {"kind": "edit", "entity": "Contact"})
+    assert result["ok"] is False and "failed" in result["observation"]

@@ -197,25 +197,30 @@ class CrmSession:
                     await self.page.goto(self.base_url + "/", wait_until="domcontentloaded",
                                          timeout=NAV_TIMEOUT_MS)
                 login_btn = self.page.locator("#btn-login")
-                try:
-                    await login_btn.wait_for(state="visible", timeout=NAV_TIMEOUT_MS)
-                except PlaywrightTimeout:
-                    # Already logged in (cookie still valid)?
-                    if await self.page.locator("#navbar").count():
-                        return
-                    raise
+                navbar = self.page.locator("#navbar")
+                # Whichever shows first: the login form, or the app (auth state still valid).
+                await login_btn.or_(navbar).first.wait_for(state="attached", timeout=NAV_TIMEOUT_MS)
+                if not await login_btn.is_visible():
+                    await self._remember_auth()
+                    return
                 await login_btn.click()
-                await self.page.wait_for_selector("#navbar", state="attached", timeout=NAV_TIMEOUT_MS)
+                await navbar.wait_for(state="attached", timeout=NAV_TIMEOUT_MS)
                 try:
-                    await self.page.wait_for_load_state("networkidle", timeout=10_000)
+                    # The demo keeps background requests going, so cap the idle wait.
+                    await self.page.wait_for_load_state("networkidle", timeout=3_000)
                 except PlaywrightTimeout:
                     pass
+                await self._remember_auth()
                 return
             except (PlaywrightTimeout, PlaywrightError) as exc:
                 last_exc = exc
                 log.warning("login failed (attempt %d): %s", attempt + 1, exc)
                 await asyncio.sleep(1.5 * (attempt + 1))
         raise CrmError(f"Could not log in to the CRM: {last_exc}")
+
+    async def _remember_auth(self) -> None:
+        with contextlib.suppress(Exception):
+            self.owner.auth_state = await self.context.storage_state()
 
     async def ensure_logged_in(self) -> bool:
         """Log in again if the session expired. Returns True if a login happened."""
@@ -388,6 +393,9 @@ class CrmBrowser:
         self._browser: Optional[Browser] = None
         self._lock = asyncio.Lock()
         self._sessions: set[CrmSession] = set()
+        # Cookies/localStorage of the last successful login. New sessions start from
+        # it so they usually skip the login screen (saves several seconds).
+        self.auth_state: Optional[dict] = None
 
     async def start(self) -> Browser:
         """Launch Chromium lazily (and relaunch it if it crashed)."""
@@ -404,7 +412,8 @@ class CrmBrowser:
         """Create an isolated, logged-in session. Starts the screencast if `on_frame` is given."""
         browser = await self.start()
         context = await browser.new_context(viewport=VIEWPORT, locale="en-US",
-                                            timezone_id="UTC", device_scale_factor=1)
+                                            timezone_id="UTC", device_scale_factor=1,
+                                            storage_state=self.auth_state)
         try:
             context.set_default_timeout(ACTION_TIMEOUT_MS)
             context.set_default_navigation_timeout(NAV_TIMEOUT_MS)

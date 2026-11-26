@@ -892,6 +892,8 @@ async def _save(session: CrmSession, uimap: UiMap, st: dict, confirm_duplicate: 
                                        ". Ask the user whether to create it anyway (then call save with "
                                        "confirm_duplicate=true) or cancel."}
         failed = [w for w in writes if w[1] >= 400 and w[1] != 409]
+        if failed and failed[-1][1] == 401:
+            return await _recover_logged_out_save(session, cur)
         if failed:
             cells = await _cells(session)
             return {"ok": False, "saved": False, "form": _form_snapshot(cur, cells),
@@ -914,6 +916,38 @@ async def _save(session: CrmSession, uimap: UiMap, st: dict, confirm_duplicate: 
             "name": cur["title"], "form": _form_snapshot(cur, cells),
             "fields": {c["label"]: c["value"] for c in cells if c["value"]},
             "observation": f"Saved. The {entity} '{cur['title']}' detail view now shows: {filled}."}
+
+
+async def _recover_logged_out_save(session: CrmSession, cur: dict) -> dict:
+    """The CRM rejected the save with 401: the shared demo logged this session out.
+
+    The demo invalidates sessions (e.g. on its periodic reset), and the unsaved form
+    cannot be submitted any more. Remember what was on the form, log in again, and
+    tell the model exactly how to redo it, so the user is never told to refresh
+    their own page (which would end the call).
+    """
+    cells = await _cells(session)
+    values = [f"{c['label']} = '{c['value']}'" for c in cells if c["value"]]
+    snapshot = _form_snapshot(cur, cells)
+    relogged = True
+    try:
+        await session.login()
+    except CrmError as exc:
+        log.warning("re-login after 401 failed: %s", exc)
+        relogged = False
+    where = ("re-open the create form with open_create_form passing these same fields"
+             if cur.get("kind") == "create" else
+             "re-open the record, call edit_record, fill these same fields")
+    obs = ("Not saved: the shared demo CRM logged this session out (HTTP 401), so the form could not be "
+           "submitted and nothing was saved. ")
+    if relogged:
+        obs += ("I logged in again; the form was lost. Values that were on the form: "
+                + ("; ".join(values) or "(none)") + f". To finish: {where}, then call save again. "
+                "The user already confirmed these values, so do not ask again; just say in a few words "
+                "that the demo logged us out and you are redoing it. Never ask the user to refresh the page.")
+    else:
+        obs += "Logging in again failed; tell the user the demo CRM is not responding and to try again shortly."
+    return {"ok": False, "saved": False, "logged_out": True, "form": snapshot, "observation": obs}
 
 
 async def tool_cancel(session: CrmSession, uimap: UiMap) -> dict:
