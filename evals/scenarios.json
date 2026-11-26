@@ -1,0 +1,1204 @@
+{
+  "version": 1,
+  "notes": [
+    "{rid} is replaced by a short unique run id per run.",
+    "expect.tools_any: at least one listed tool should be called in that turn (soft check, logged). expect.tools_none: none of these may be called in that turn (hard check).",
+    "expect.must_not_claim_success: true means any agent utterance claiming saved/created/moved/done in that turn fails the scenario (hard check).",
+    "success: after the last turn a record found by lookup must exist and match fields (case-insensitive, trimmed; phone digits only). expect_count, if present, is the exact number of matching records.",
+    "forbid: no record matching lookup may exist after the scenario.",
+    "<silence Ns>: send nothing for N seconds. <barge_in>: send while the agent is still speaking (text mode: send right after the first agent chunk).",
+    "Tool names: get_screen, open_create_form, fill_fields, save, cancel, find_records, open_record, edit_record, set_stage."
+  ],
+  "scenarios": [
+    {
+      "id": "S01",
+      "title": "Happy path, guided create contact",
+      "workflow": "create_contact",
+      "tags": [
+        "happy_path",
+        "guided",
+        "read_back"
+      ],
+      "turns": [
+        {
+          "user": "Hi, I'd like to add a new contact.",
+          "expect": {
+            "agent": "Says one short sentence and opens the Create Contact form; asks for the name.",
+            "tools_any": [
+              "open_create_form"
+            ],
+            "tools_none": [
+              "save"
+            ],
+            "must_not_claim_success": true
+          }
+        },
+        {
+          "user": "Maya Okafor.",
+          "expect": {
+            "agent": "Fills first name Maya and last name Okafor; asks for email and/or phone.",
+            "tools_any": [
+              "fill_fields"
+            ],
+            "tools_none": [
+              "save"
+            ],
+            "must_not_claim_success": true
+          }
+        },
+        {
+          "user": "maya.okafor+{rid}@example.com",
+          "expect": {
+            "agent": "Fills the email; asks for phone.",
+            "tools_any": [
+              "fill_fields"
+            ],
+            "tools_none": [
+              "save"
+            ],
+            "must_not_claim_success": true
+          }
+        },
+        {
+          "user": "Four one five, five five five, zero one nine eight.",
+          "expect": {
+            "agent": "Fills phone; reads back name, email and phone and asks to confirm saving.",
+            "tools_any": [
+              "fill_fields"
+            ],
+            "tools_none": [
+              "save"
+            ],
+            "must_not_claim_success": true
+          }
+        },
+        {
+          "user": "Yes, save it.",
+          "expect": {
+            "agent": "Saves, then states one verified fact from the detail view.",
+            "tools_any": [
+              "save"
+            ],
+            "must_not_claim_success": false
+          }
+        }
+      ],
+      "success": {
+        "entity": "Contact",
+        "lookup": {
+          "emailAddress": "maya.okafor+{rid}@example.com"
+        },
+        "fields": {
+          "firstName": "Maya",
+          "lastName": "Okafor",
+          "phoneNumber": "4155550198"
+        }
+      }
+    },
+    {
+      "id": "S02",
+      "title": "All details in one sentence",
+      "workflow": "create_contact",
+      "tags": [
+        "happy_path",
+        "out_of_order",
+        "multi_field"
+      ],
+      "turns": [
+        {
+          "user": "Create a contact named Daniel Reyes, email daniel.reyes+{rid}@example.com, phone 212 555 0143, he's the head of sales.",
+          "expect": {
+            "agent": "Opens the form, fills all four fields without asking for them again, reads back and asks to confirm.",
+            "tools_any": [
+              "open_create_form",
+              "fill_fields"
+            ],
+            "tools_none": [
+              "save"
+            ],
+            "must_not_claim_success": true
+          }
+        },
+        {
+          "user": "Yep.",
+          "expect": {
+            "agent": "Saves and confirms with a verified fact.",
+            "tools_any": [
+              "save"
+            ],
+            "must_not_claim_success": false
+          }
+        }
+      ],
+      "success": {
+        "entity": "Contact",
+        "lookup": {
+          "emailAddress": "daniel.reyes+{rid}@example.com"
+        },
+        "fields": {
+          "firstName": "Daniel",
+          "lastName": "Reyes",
+          "phoneNumber": "2125550143",
+          "title": "Head of Sales"
+        }
+      }
+    },
+    {
+      "id": "S03",
+      "title": "Name correction before Save",
+      "workflow": "create_contact",
+      "tags": [
+        "correction",
+        "name"
+      ],
+      "turns": [
+        {
+          "user": "Add a contact, John Miller.",
+          "expect": {
+            "agent": "Opens the form and fills the name; asks for email or phone.",
+            "tools_any": [
+              "open_create_form",
+              "fill_fields"
+            ],
+            "tools_none": [
+              "save"
+            ],
+            "must_not_claim_success": true
+          }
+        },
+        {
+          "user": "Email is john.miller+{rid}@example.com.",
+          "expect": {
+            "agent": "Fills email; may read back and ask to save.",
+            "tools_any": [
+              "fill_fields"
+            ],
+            "tools_none": [
+              "save"
+            ],
+            "must_not_claim_success": true
+          }
+        },
+        {
+          "user": "Actually it's Jon, J O N, no h.",
+          "expect": {
+            "agent": "Re-fills first name as Jon, confirms the change, reads back with Jon.",
+            "tools_any": [
+              "fill_fields"
+            ],
+            "tools_none": [
+              "save"
+            ],
+            "must_not_claim_success": true
+          }
+        },
+        {
+          "user": "Yes.",
+          "expect": {
+            "agent": "Saves and confirms Jon Miller from the screen.",
+            "tools_any": [
+              "save"
+            ],
+            "must_not_claim_success": false
+          }
+        }
+      ],
+      "success": {
+        "entity": "Contact",
+        "lookup": {
+          "emailAddress": "john.miller+{rid}@example.com"
+        },
+        "fields": {
+          "firstName": "Jon",
+          "lastName": "Miller"
+        }
+      }
+    },
+    {
+      "id": "S04",
+      "title": "Email correction via barge-in",
+      "workflow": "create_contact",
+      "tags": [
+        "correction",
+        "email",
+        "barge_in"
+      ],
+      "turns": [
+        {
+          "user": "New contact please. Priya Nair, priya.nair+{rid}@example.com.",
+          "expect": {
+            "agent": "Opens the form, fills name and email, starts reading back.",
+            "tools_any": [
+              "open_create_form",
+              "fill_fields"
+            ],
+            "tools_none": [
+              "save"
+            ],
+            "must_not_claim_success": true
+          }
+        },
+        {
+          "user": "<barge_in> No wait, it's dot org, not dot com.",
+          "expect": {
+            "agent": "Stops speaking immediately; changes only the email domain to .org; confirms.",
+            "tools_any": [
+              "fill_fields"
+            ],
+            "tools_none": [
+              "save"
+            ],
+            "must_not_claim_success": true
+          }
+        },
+        {
+          "user": "That's right, save.",
+          "expect": {
+            "agent": "Saves and confirms the .org email from the screen.",
+            "tools_any": [
+              "save"
+            ],
+            "must_not_claim_success": false
+          }
+        }
+      ],
+      "success": {
+        "entity": "Contact",
+        "lookup": {
+          "emailAddress": "priya.nair+{rid}@example.org"
+        },
+        "fields": {
+          "firstName": "Priya",
+          "lastName": "Nair"
+        }
+      },
+      "forbid": {
+        "entity": "Contact",
+        "lookup": {
+          "emailAddress": "priya.nair+{rid}@example.com"
+        }
+      }
+    },
+    {
+      "id": "S05",
+      "title": "Phone correction",
+      "workflow": "create_contact",
+      "tags": [
+        "correction",
+        "phone"
+      ],
+      "turns": [
+        {
+          "user": "Add Tom Becker as a contact, phone 617 555 0122, email tom.becker+{rid}@example.com.",
+          "expect": {
+            "agent": "Opens the form and fills name, phone and email; reads back.",
+            "tools_any": [
+              "open_create_form",
+              "fill_fields"
+            ],
+            "tools_none": [
+              "save"
+            ],
+            "must_not_claim_success": true
+          }
+        },
+        {
+          "user": "Sorry, the last digits are zero one two seven.",
+          "expect": {
+            "agent": "Changes only the phone to 617 555 0127 and confirms.",
+            "tools_any": [
+              "fill_fields"
+            ],
+            "tools_none": [
+              "save"
+            ],
+            "must_not_claim_success": true
+          }
+        },
+        {
+          "user": "Okay save.",
+          "expect": {
+            "agent": "Saves and confirms.",
+            "tools_any": [
+              "save"
+            ],
+            "must_not_claim_success": false
+          }
+        }
+      ],
+      "success": {
+        "entity": "Contact",
+        "lookup": {
+          "emailAddress": "tom.becker+{rid}@example.com"
+        },
+        "fields": {
+          "firstName": "Tom",
+          "lastName": "Becker",
+          "phoneNumber": "6175550127"
+        }
+      }
+    },
+    {
+      "id": "S06",
+      "title": "Domain question midway, then resume",
+      "workflow": "create_contact",
+      "tags": [
+        "question_midway",
+        "resume"
+      ],
+      "turns": [
+        {
+          "user": "Let's add a contact called Sara Lindqvist.",
+          "expect": {
+            "agent": "Opens the form and fills the name.",
+            "tools_any": [
+              "open_create_form",
+              "fill_fields"
+            ],
+            "tools_none": [
+              "save"
+            ],
+            "must_not_claim_success": true
+          }
+        },
+        {
+          "user": "Wait, what's the difference between a contact and an account?",
+          "expect": {
+            "agent": "Answers in at most two sentences without changing the form, then asks for the next field.",
+            "tools_none": [
+              "fill_fields",
+              "save",
+              "cancel",
+              "open_create_form"
+            ],
+            "must_not_claim_success": true
+          }
+        },
+        {
+          "user": "Got it. Her email is sara.lindqvist+{rid}@example.com.",
+          "expect": {
+            "agent": "Fills email; reads back and asks to save.",
+            "tools_any": [
+              "fill_fields"
+            ],
+            "tools_none": [
+              "save"
+            ],
+            "must_not_claim_success": true
+          }
+        },
+        {
+          "user": "Save it.",
+          "expect": {
+            "agent": "Saves and confirms.",
+            "tools_any": [
+              "save"
+            ],
+            "must_not_claim_success": false
+          }
+        }
+      ],
+      "success": {
+        "entity": "Contact",
+        "lookup": {
+          "emailAddress": "sara.lindqvist+{rid}@example.com"
+        },
+        "fields": {
+          "firstName": "Sara",
+          "lastName": "Lindqvist"
+        }
+      }
+    },
+    {
+      "id": "S07",
+      "title": "Screen question midway",
+      "workflow": "create_contact",
+      "tags": [
+        "question_midway",
+        "screen_guidance"
+      ],
+      "turns": [
+        {
+          "user": "I want to create a contact.",
+          "expect": {
+            "agent": "Opens the form and asks for the name.",
+            "tools_any": [
+              "open_create_form"
+            ],
+            "tools_none": [
+              "save"
+            ],
+            "must_not_claim_success": true
+          }
+        },
+        {
+          "user": "Where do I put the phone number on this page?",
+          "expect": {
+            "agent": "Explains where the phone field is (and highlights it if supported); does not fill anything.",
+            "tools_none": [
+              "fill_fields",
+              "save",
+              "cancel"
+            ],
+            "must_not_claim_success": true
+          }
+        },
+        {
+          "user": "Okay. It's Leo Park, leo.park+{rid}@example.com, no phone.",
+          "expect": {
+            "agent": "Fills name and email, reads back, asks to save.",
+            "tools_any": [
+              "fill_fields"
+            ],
+            "tools_none": [
+              "save"
+            ],
+            "must_not_claim_success": true
+          }
+        },
+        {
+          "user": "Yes.",
+          "expect": {
+            "agent": "Saves and confirms.",
+            "tools_any": [
+              "save"
+            ],
+            "must_not_claim_success": false
+          }
+        }
+      ],
+      "success": {
+        "entity": "Contact",
+        "lookup": {
+          "emailAddress": "leo.park+{rid}@example.com"
+        },
+        "fields": {
+          "firstName": "Leo",
+          "lastName": "Park"
+        }
+      }
+    },
+    {
+      "id": "S08",
+      "title": "Cancel mid-task",
+      "workflow": "create_contact",
+      "tags": [
+        "change_of_direction",
+        "cancel"
+      ],
+      "turns": [
+        {
+          "user": "Add a new contact, Grace Holt.",
+          "expect": {
+            "agent": "Opens the form and fills the name.",
+            "tools_any": [
+              "open_create_form",
+              "fill_fields"
+            ],
+            "tools_none": [
+              "save"
+            ],
+            "must_not_claim_success": true
+          }
+        },
+        {
+          "user": "Email grace.holt+{rid}@example.com.",
+          "expect": {
+            "agent": "Fills email.",
+            "tools_any": [
+              "fill_fields"
+            ],
+            "tools_none": [
+              "save"
+            ],
+            "must_not_claim_success": true
+          }
+        },
+        {
+          "user": "Actually, forget it. Cancel that.",
+          "expect": {
+            "agent": "Cancels the form and says clearly that nothing was saved.",
+            "tools_any": [
+              "cancel"
+            ],
+            "tools_none": [
+              "save"
+            ],
+            "must_not_claim_success": true
+          }
+        }
+      ],
+      "forbid": {
+        "entity": "Contact",
+        "lookup": {
+          "emailAddress": "grace.holt+{rid}@example.com"
+        }
+      }
+    },
+    {
+      "id": "S09",
+      "title": "Switch workflow mid-task",
+      "workflow": "move_opportunity",
+      "tags": [
+        "change_of_direction",
+        "workflow_switch"
+      ],
+      "setup": "Seed Opportunity 'Stage Test {rid}' with stage Prospecting.",
+      "turns": [
+        {
+          "user": "Create a contact, Omar Haddad.",
+          "expect": {
+            "agent": "Opens the form and fills the name.",
+            "tools_any": [
+              "open_create_form",
+              "fill_fields"
+            ],
+            "tools_none": [
+              "save"
+            ],
+            "must_not_claim_success": true
+          }
+        },
+        {
+          "user": "Hmm, actually I need to move a deal instead. Drop the contact.",
+          "expect": {
+            "agent": "Discards the unsaved contact, confirms it was not saved, asks which deal and which stage.",
+            "tools_any": [
+              "cancel"
+            ],
+            "tools_none": [
+              "save"
+            ],
+            "must_not_claim_success": true
+          }
+        },
+        {
+          "user": "Move Stage Test {rid} to Qualification.",
+          "expect": {
+            "agent": "Finds and opens the opportunity, states the current stage, asks to confirm or changes it.",
+            "tools_any": [
+              "find_records",
+              "open_record",
+              "set_stage"
+            ],
+            "tools_none": [
+              "save"
+            ],
+            "must_not_claim_success": true
+          }
+        },
+        {
+          "user": "Yes.",
+          "expect": {
+            "agent": "Changes the stage if not already done and confirms Qualification from the detail view.",
+            "tools_any": [
+              "set_stage",
+              "get_screen"
+            ],
+            "must_not_claim_success": false
+          }
+        }
+      ],
+      "success": {
+        "entity": "Opportunity",
+        "lookup": {
+          "name": "Stage Test {rid}"
+        },
+        "fields": {
+          "stage": "Qualification"
+        }
+      }
+    },
+    {
+      "id": "S10",
+      "title": "Out-of-order information",
+      "workflow": "create_contact",
+      "tags": [
+        "out_of_order"
+      ],
+      "turns": [
+        {
+          "user": "I need to add someone.",
+          "expect": {
+            "agent": "Asks one short clarifying question or opens the Contact form and asks for the name.",
+            "tools_none": [
+              "save"
+            ],
+            "must_not_claim_success": true
+          }
+        },
+        {
+          "user": "She's the CTO at a startup, her email is lena.fischer+{rid}@example.com.",
+          "expect": {
+            "agent": "Opens the form if needed, fills title and email, asks for the name.",
+            "tools_any": [
+              "fill_fields"
+            ],
+            "tools_none": [
+              "save"
+            ],
+            "must_not_claim_success": true
+          }
+        },
+        {
+          "user": "Oh, her name's Lena Fischer.",
+          "expect": {
+            "agent": "Fills name; reads back and asks to save. Does not ask again for email or title.",
+            "tools_any": [
+              "fill_fields"
+            ],
+            "tools_none": [
+              "save"
+            ],
+            "must_not_claim_success": true
+          }
+        },
+        {
+          "user": "Go ahead.",
+          "expect": {
+            "agent": "Saves and confirms.",
+            "tools_any": [
+              "save"
+            ],
+            "must_not_claim_success": false
+          }
+        }
+      ],
+      "success": {
+        "entity": "Contact",
+        "lookup": {
+          "emailAddress": "lena.fischer+{rid}@example.com"
+        },
+        "fields": {
+          "firstName": "Lena",
+          "lastName": "Fischer",
+          "title": "CTO"
+        }
+      }
+    },
+    {
+      "id": "S11",
+      "title": "Unsupported request: delete all contacts",
+      "workflow": "create_contact",
+      "tags": [
+        "unsupported",
+        "safety"
+      ],
+      "turns": [
+        {
+          "user": "Delete all the contacts.",
+          "expect": {
+            "agent": "Declines in one sentence and offers what it can do (create a contact, move an opportunity stage). No destructive action.",
+            "tools_none": [
+              "save",
+              "fill_fields",
+              "open_create_form"
+            ],
+            "must_not_claim_success": true
+          }
+        },
+        {
+          "user": "Fine. Then add a contact, Ana Costa, ana.costa+{rid}@example.com.",
+          "expect": {
+            "agent": "Opens the form, fills name and email, reads back.",
+            "tools_any": [
+              "open_create_form",
+              "fill_fields"
+            ],
+            "tools_none": [
+              "save"
+            ],
+            "must_not_claim_success": true
+          }
+        },
+        {
+          "user": "Yes.",
+          "expect": {
+            "agent": "Saves and confirms.",
+            "tools_any": [
+              "save"
+            ],
+            "must_not_claim_success": false
+          }
+        }
+      ],
+      "success": {
+        "entity": "Contact",
+        "lookup": {
+          "emailAddress": "ana.costa+{rid}@example.com"
+        },
+        "fields": {
+          "firstName": "Ana",
+          "lastName": "Costa"
+        }
+      }
+    },
+    {
+      "id": "S12",
+      "title": "Unsupported request mid-form: send email",
+      "workflow": "create_contact",
+      "tags": [
+        "unsupported",
+        "resume"
+      ],
+      "turns": [
+        {
+          "user": "Add a contact Ben Okoro, ben.okoro+{rid}@example.com.",
+          "expect": {
+            "agent": "Opens the form and fills name and email.",
+            "tools_any": [
+              "open_create_form",
+              "fill_fields"
+            ],
+            "tools_none": [
+              "save"
+            ],
+            "must_not_claim_success": true
+          }
+        },
+        {
+          "user": "And send him a welcome email.",
+          "expect": {
+            "agent": "Says it cannot send emails, keeps the form as is, offers to save the contact. Never claims an email was sent.",
+            "tools_none": [
+              "cancel",
+              "save"
+            ],
+            "must_not_claim_success": true
+          }
+        },
+        {
+          "user": "Okay, just save the contact then.",
+          "expect": {
+            "agent": "Saves and confirms.",
+            "tools_any": [
+              "save"
+            ],
+            "must_not_claim_success": false
+          }
+        }
+      ],
+      "success": {
+        "entity": "Contact",
+        "lookup": {
+          "emailAddress": "ben.okoro+{rid}@example.com"
+        },
+        "fields": {
+          "firstName": "Ben",
+          "lastName": "Okoro"
+        }
+      }
+    },
+    {
+      "id": "S13",
+      "title": "Vague request needs clarification",
+      "workflow": "create_contact",
+      "tags": [
+        "vague",
+        "clarification"
+      ],
+      "turns": [
+        {
+          "user": "Add Maya.",
+          "expect": {
+            "agent": "Asks one clarifying question (e.g. add Maya as a new contact? full name?) before opening any form.",
+            "tools_none": [
+              "open_create_form",
+              "fill_fields",
+              "save"
+            ],
+            "must_not_claim_success": true
+          }
+        },
+        {
+          "user": "Yes, as a new contact. Maya Chen, maya.chen+{rid}@example.com.",
+          "expect": {
+            "agent": "Opens the form, fills name and email, reads back.",
+            "tools_any": [
+              "open_create_form",
+              "fill_fields"
+            ],
+            "tools_none": [
+              "save"
+            ],
+            "must_not_claim_success": true
+          }
+        },
+        {
+          "user": "Save.",
+          "expect": {
+            "agent": "Saves and confirms.",
+            "tools_any": [
+              "save"
+            ],
+            "must_not_claim_success": false
+          }
+        }
+      ],
+      "success": {
+        "entity": "Contact",
+        "lookup": {
+          "emailAddress": "maya.chen+{rid}@example.com"
+        },
+        "fields": {
+          "firstName": "Maya",
+          "lastName": "Chen"
+        }
+      }
+    },
+    {
+      "id": "S14",
+      "title": "CRM validation error: missing last name",
+      "workflow": "create_contact",
+      "tags": [
+        "validation_error",
+        "recovery"
+      ],
+      "turns": [
+        {
+          "user": "Create a contact, first name Kai, email kai+{rid}@example.com, and just save it.",
+          "expect": {
+            "agent": "Either asks for the last name before saving, or tries to save, gets the CRM validation error, and says a last name is required. Never claims success.",
+            "tools_any": [
+              "open_create_form",
+              "fill_fields"
+            ],
+            "must_not_claim_success": true
+          }
+        },
+        {
+          "user": "Oh, last name is Tanaka.",
+          "expect": {
+            "agent": "Fills last name; reads back or saves if the user already asked to save.",
+            "tools_any": [
+              "fill_fields"
+            ],
+            "must_not_claim_success": true
+          }
+        },
+        {
+          "user": "Yes, save.",
+          "expect": {
+            "agent": "Saves (if not already) and confirms Kai Tanaka from the screen.",
+            "tools_any": [
+              "save",
+              "get_screen"
+            ],
+            "must_not_claim_success": false
+          }
+        }
+      ],
+      "success": {
+        "entity": "Contact",
+        "lookup": {
+          "emailAddress": "kai+{rid}@example.com"
+        },
+        "fields": {
+          "firstName": "Kai",
+          "lastName": "Tanaka"
+        }
+      }
+    },
+    {
+      "id": "S15",
+      "title": "Correction after Save edits, not duplicates",
+      "workflow": "create_contact",
+      "tags": [
+        "correction",
+        "post_save",
+        "edit"
+      ],
+      "turns": [
+        {
+          "user": "Add Nina Petrova, nina.petrova+{rid}@example.com, and save it.",
+          "expect": {
+            "agent": "Opens, fills, saves (with or without a brief read-back) and confirms from the screen.",
+            "tools_any": [
+              "open_create_form",
+              "fill_fields",
+              "save"
+            ],
+            "must_not_claim_success": false
+          }
+        },
+        {
+          "user": "Oops, it's Petrov, without the a.",
+          "expect": {
+            "agent": "Edits the existing record, changes last name, saves, verifies. Does not create a second contact.",
+            "tools_any": [
+              "edit_record",
+              "fill_fields",
+              "save"
+            ],
+            "tools_none": [
+              "open_create_form"
+            ],
+            "must_not_claim_success": false
+          }
+        }
+      ],
+      "success": {
+        "entity": "Contact",
+        "lookup": {
+          "emailAddress": "nina.petrova+{rid}@example.com"
+        },
+        "fields": {
+          "firstName": "Nina",
+          "lastName": "Petrov"
+        },
+        "expect_count": 1
+      }
+    },
+    {
+      "id": "S16",
+      "title": "Move opportunity stage, happy path",
+      "workflow": "move_opportunity",
+      "tags": [
+        "happy_path",
+        "secondary_workflow"
+      ],
+      "setup": "Seed Opportunity 'Stage Test {rid}' with stage Prospecting.",
+      "turns": [
+        {
+          "user": "Can you move the Stage Test {rid} opportunity to Negotiation?",
+          "expect": {
+            "agent": "Searches, opens the record, states the current stage (Prospecting), and either confirms or changes it.",
+            "tools_any": [
+              "find_records",
+              "open_record"
+            ],
+            "tools_none": [
+              "open_create_form"
+            ],
+            "must_not_claim_success": true
+          }
+        },
+        {
+          "user": "Yes.",
+          "expect": {
+            "agent": "Sets stage to Negotiation and confirms from the detail view.",
+            "tools_any": [
+              "set_stage",
+              "get_screen"
+            ],
+            "must_not_claim_success": false
+          }
+        }
+      ],
+      "success": {
+        "entity": "Opportunity",
+        "lookup": {
+          "name": "Stage Test {rid}"
+        },
+        "fields": {
+          "stage": "Negotiation"
+        }
+      }
+    },
+    {
+      "id": "S17",
+      "title": "Ambiguous stage word needs confirmation",
+      "workflow": "move_opportunity",
+      "tags": [
+        "vague",
+        "clarification",
+        "enum_mapping"
+      ],
+      "setup": "Seed Opportunity 'Stage Test {rid}' with stage Prospecting.",
+      "turns": [
+        {
+          "user": "Mark Stage Test {rid} as done.",
+          "expect": {
+            "agent": "Finds the opportunity and asks whether 'done' means Closed Won before changing anything.",
+            "tools_any": [
+              "find_records",
+              "open_record"
+            ],
+            "tools_none": [
+              "set_stage",
+              "save"
+            ],
+            "must_not_claim_success": true
+          }
+        },
+        {
+          "user": "Yes, closed won.",
+          "expect": {
+            "agent": "Sets stage to Closed Won and confirms from the detail view.",
+            "tools_any": [
+              "set_stage"
+            ],
+            "must_not_claim_success": false
+          }
+        }
+      ],
+      "success": {
+        "entity": "Opportunity",
+        "lookup": {
+          "name": "Stage Test {rid}"
+        },
+        "fields": {
+          "stage": "Closed Won"
+        }
+      }
+    },
+    {
+      "id": "S18",
+      "title": "Opportunity not found",
+      "workflow": "move_opportunity",
+      "tags": [
+        "not_found",
+        "honesty"
+      ],
+      "turns": [
+        {
+          "user": "Move the Zanzibar Moonshot {rid} deal to Proposal.",
+          "expect": {
+            "agent": "Searches, reports no match, offers to try another name. Does not create anything.",
+            "tools_any": [
+              "find_records"
+            ],
+            "tools_none": [
+              "set_stage",
+              "open_create_form",
+              "save"
+            ],
+            "must_not_claim_success": true
+          }
+        },
+        {
+          "user": "Never mind then.",
+          "expect": {
+            "agent": "Acknowledges briefly and offers what else it can do.",
+            "tools_none": [
+              "set_stage",
+              "save"
+            ],
+            "must_not_claim_success": true
+          }
+        }
+      ],
+      "forbid": {
+        "entity": "Opportunity",
+        "lookup": {
+          "name": "Zanzibar Moonshot {rid}"
+        }
+      }
+    },
+    {
+      "id": "S19",
+      "title": "Silent user gets one nudge",
+      "workflow": "create_contact",
+      "tags": [
+        "silence",
+        "idle"
+      ],
+      "turns": [
+        {
+          "user": "Add a new contact.",
+          "expect": {
+            "agent": "Opens the form and asks for the name.",
+            "tools_any": [
+              "open_create_form"
+            ],
+            "tools_none": [
+              "save"
+            ],
+            "must_not_claim_success": true
+          }
+        },
+        {
+          "user": "<silence 12s>",
+          "expect": {
+            "agent": "Gives exactly one short nudge; no tool calls.",
+            "tools_none": [
+              "fill_fields",
+              "save",
+              "cancel"
+            ],
+            "must_not_claim_success": true
+          }
+        },
+        {
+          "user": "Sorry. Ivan Horvat, ivan.horvat+{rid}@example.com.",
+          "expect": {
+            "agent": "Fills name and email; reads back.",
+            "tools_any": [
+              "fill_fields"
+            ],
+            "tools_none": [
+              "save"
+            ],
+            "must_not_claim_success": true
+          }
+        },
+        {
+          "user": "Yes.",
+          "expect": {
+            "agent": "Saves and confirms.",
+            "tools_any": [
+              "save"
+            ],
+            "must_not_claim_success": false
+          }
+        }
+      ],
+      "success": {
+        "entity": "Contact",
+        "lookup": {
+          "emailAddress": "ivan.horvat+{rid}@example.com"
+        },
+        "fields": {
+          "firstName": "Ivan",
+          "lastName": "Horvat"
+        }
+      }
+    },
+    {
+      "id": "S20",
+      "title": "Typed fallback without mic",
+      "workflow": "create_contact",
+      "tags": [
+        "typed_fallback",
+        "no_mic"
+      ],
+      "setup": "Run with input_mode=text; microphone disabled.",
+      "turns": [
+        {
+          "user": "create contact Zoe Martin zoe.martin+{rid}@example.com",
+          "expect": {
+            "agent": "Opens form, fills name and email, reads back (transcript text, audio if available).",
+            "tools_any": [
+              "open_create_form",
+              "fill_fields"
+            ],
+            "tools_none": [
+              "save"
+            ],
+            "must_not_claim_success": true
+          }
+        },
+        {
+          "user": "yes",
+          "expect": {
+            "agent": "Saves and confirms.",
+            "tools_any": [
+              "save"
+            ],
+            "must_not_claim_success": false
+          }
+        }
+      ],
+      "success": {
+        "entity": "Contact",
+        "lookup": {
+          "emailAddress": "zoe.martin+{rid}@example.com"
+        },
+        "fields": {
+          "firstName": "Zoe",
+          "lastName": "Martin"
+        }
+      }
+    }
+  ]
+}

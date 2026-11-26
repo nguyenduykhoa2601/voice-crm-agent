@@ -1,0 +1,23 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+.env
+data/metrics.jsonl
+data/runs/
+__pycache__/
+.pytest_cache/
+*.png
+!docs/img/*.png
+
+# internal working docs (kept local)
+PROGRESS.md
+docs/BRIEF.md
+docs/SUBMISSION.md
+docs/TECHNICAL_NOTES_OUTLINE.md

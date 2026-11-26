@@ -1,0 +1,1784 @@
+{
+  "source": "https://demo.us.espocrm.com",
+  "crawledAt": "2026-11-26T03:57:00+00:00",
+  "dateFormat": "MM/DD/YYYY",
+  "timeFormat": "HH:mm",
+  "defaultCurrency": "USD",
+  "currencyList": [
+    "EUR",
+    "USD"
+  ],
+  "entities": {
+    "Contact": {
+      "label": "Contact",
+      "labelPlural": "Contacts",
+      "routes": {
+        "list": "#Contact",
+        "create": "#Contact/create",
+        "detail": "#Contact/view/{id}"
+      },
+      "fields": {
+        "salutationName": {
+          "label": "Salutation",
+          "type": "enum",
+          "widget": "selectize",
+          "required": false,
+          "cell": "name",
+          "cellLabel": "Name",
+          "panel": "main",
+          "selector": ".cell[data-name=\"name\"] [data-name=\"salutationName\"]",
+          "options": [
+            {
+              "value": "",
+              "label": ""
+            },
+            {
+              "value": "Mr.",
+              "label": "Mr."
+            },
+            {
+              "value": "Ms.",
+              "label": "Ms."
+            },
+            {
+              "value": "Mrs.",
+              "label": "Mrs."
+            },
+            {
+              "value": "Dr.",
+              "label": "Dr."
+            }
+          ]
+        },
+        "firstName": {
+          "label": "First Name",
+          "type": "varchar",
+          "widget": "input",
+          "required": false,
+          "cell": "name",
+          "cellLabel": "Name",
+          "panel": "main",
+          "selector": ".cell[data-name=\"name\"] [data-name=\"firstName\"]",
+          "maxLength": 100
+        },
+        "lastName": {
+          "label": "Last Name",
+          "type": "varchar",
+          "widget": "input",
+          "required": true,
+          "cell": "name",
+          "cellLabel": "Name",
+          "panel": "main",
+          "selector": ".cell[data-name=\"name\"] [data-name=\"lastName\"]",
+          "maxLength": 100
+        },
+        "accounts": {
+          "label": "Accounts",
+          "type": "linkMultiple",
+          "widget": "autocomplete-multiple",
+          "required": false,
+          "cell": "accounts",
+          "cellLabel": "Accounts",
+          "panel": "main",
+          "selector": ".cell[data-name=\"accounts\"]",
+          "entity": "Account"
+        },
+        "emailAddress": {
+          "label": "Email",
+          "type": "email",
+          "widget": "input",
+          "required": false,
+          "cell": "emailAddress",
+          "cellLabel": "Email",
+          "panel": "main",
+          "selector": ".cell[data-name=\"emailAddress\"]"
+        },
+        "phoneNumber": {
+          "label": "Phone",
+          "type": "phone",
+          "widget": "input",
+          "required": false,
+          "cell": "phoneNumber",
+          "cellLabel": "Phone",
+          "panel": "main",
+          "selector": ".cell[data-name=\"phoneNumber\"]"
+        },
+        "addressStreet": {
+          "label": "Street",
+          "type": "text",
+          "widget": "textarea",
+          "required": false,
+          "cell": "address",
+          "cellLabel": "Address",
+          "panel": "main",
+          "selector": ".cell[data-name=\"address\"] [data-name=\"addressStreet\"]",
+          "maxLength": 255
+        },
+        "addressCity": {
+          "label": "City",
+          "type": "varchar",
+          "widget": "input",
+          "required": false,
+          "cell": "address",
+          "cellLabel": "Address",
+          "panel": "main",
+          "selector": ".cell[data-name=\"address\"] [data-name=\"addressCity\"]",
+          "maxLength": 100
+        },
+        "addressState": {
+          "label": "State",
+          "type": "varchar",
+          "widget": "input",
+          "required": false,
+          "cell": "address",
+          "cellLabel": "Address",
+          "panel": "main",
+          "selector": ".cell[data-name=\"address\"] [data-name=\"addressState\"]",
+          "maxLength": 100
+        },
+        "addressPostalCode": {
+          "label": "Postal Code",
+          "type": "varchar",
+          "widget": "input",
+          "required": false,
+          "cell": "address",
+          "cellLabel": "Address",
+          "panel": "main",
+          "selector": ".cell[data-name=\"address\"] [data-name=\"addressPostalCode\"]",
+          "maxLength": 40
+        },
+        "addressCountry": {
+          "label": "Country",
+          "type": "varchar",
+          "widget": "input",
+          "required": false,
+          "cell": "address",
+          "cellLabel": "Address",
+          "panel": "main",
+          "selector": ".cell[data-name=\"address\"] [data-name=\"addressCountry\"]",
+          "maxLength": 100
+        },
+        "birthday": {
+          "label": "Birthday",
+          "type": "date",
+          "widget": "datepicker",
+          "required": false,
+          "cell": "birthday",
+          "cellLabel": "Birthday",
+          "panel": "main",
+          "selector": ".cell[data-name=\"birthday\"]"
+        },
+        "description": {
+          "label": "Description",
+          "type": "text",
+          "widget": "textarea",
+          "required": false,
+          "cell": "description",
+          "cellLabel": "Description",
+          "panel": "main",
+          "selector": ".cell[data-name=\"description\"]"
+        },
+        "assignedUser": {
+          "label": "Assigned User",
+          "type": "link",
+          "widget": "autocomplete",
+          "required": false,
+          "cell": "assignedUser",
+          "cellLabel": "Assigned User",
+          "panel": "side",
+          "selector": ".cell[data-name=\"assignedUser\"]",
+          "entity": "User"
+        },
+        "teams": {
+          "label": "Teams",
+          "type": "linkMultiple",
+          "widget": "autocomplete-multiple",
+          "required": false,
+          "cell": "teams",
+          "cellLabel": "Teams",
+          "panel": "side",
+          "selector": ".cell[data-name=\"teams\"]",
+          "entity": "Team"
+        }
+      },
+      "requiredFields": [
+        "lastName"
+      ],
+      "actions": {
+        "create": [
+          {
+            "action": "save",
+            "text": "Save",
+            "inMenu": false
+          },
+          {
+            "action": "cancel",
+            "text": "Cancel",
+            "inMenu": false
+          },
+          {
+            "action": "saveAndContinueEditing",
+            "text": "Save & Continue Editing",
+            "inMenu": true
+          },
+          {
+            "action": "saveAndNew",
+            "text": "Save & New",
+            "inMenu": true
+          }
+        ],
+        "detail": [
+          {
+            "action": "star",
+            "text": "Star",
+            "inMenu": false
+          },
+          {
+            "action": "follow",
+            "text": "Follow",
+            "inMenu": false
+          },
+          {
+            "action": "edit",
+            "text": "Edit",
+            "inMenu": false
+          },
+          {
+            "action": "delete",
+            "text": "Remove",
+            "inMenu": true
+          },
+          {
+            "action": "duplicate",
+            "text": "Duplicate",
+            "inMenu": true
+          },
+          {
+            "action": "viewPersonalData",
+            "text": "View Personal Data",
+            "inMenu": true
+          },
+          {
+            "action": "viewFollowers",
+            "text": "View Followers",
+            "inMenu": true
+          },
+          {
+            "action": "viewUserAccess",
+            "text": "View User Access",
+            "inMenu": true
+          },
+          {
+            "action": "saveAndContinueEditing",
+            "text": "Save & Continue Editing",
+            "inMenu": true
+          }
+        ]
+      },
+      "list": {
+        "columns": [
+          {
+            "name": "name",
+            "label": "Name"
+          },
+          {
+            "name": "account",
+            "label": "Account"
+          },
+          {
+            "name": "emailAddress",
+            "label": "Email"
+          },
+          {
+            "name": "phoneNumber",
+            "label": "Phone"
+          }
+        ],
+        "kanban": false,
+        "kanbanGroups": [],
+        "hasTextSearch": true
+      }
+    },
+    "Opportunity": {
+      "label": "Opportunity",
+      "labelPlural": "Opportunities",
+      "routes": {
+        "list": "#Opportunity",
+        "create": "#Opportunity/create",
+        "detail": "#Opportunity/view/{id}"
+      },
+      "fields": {
+        "name": {
+          "label": "Name",
+          "type": "varchar",
+          "widget": "input",
+          "required": true,
+          "cell": "name",
+          "cellLabel": "Name",
+          "panel": "main",
+          "selector": ".cell[data-name=\"name\"]"
+        },
+        "account": {
+          "label": "Account",
+          "type": "link",
+          "widget": "autocomplete",
+          "required": false,
+          "cell": "account",
+          "cellLabel": "Account",
+          "panel": "main",
+          "selector": ".cell[data-name=\"account\"]",
+          "entity": "Account"
+        },
+        "stage": {
+          "label": "Stage",
+          "type": "enum",
+          "widget": "selectize",
+          "required": false,
+          "cell": "stage",
+          "cellLabel": "Stage",
+          "panel": "main",
+          "selector": ".cell[data-name=\"stage\"]",
+          "options": [
+            {
+              "value": "Prospecting",
+              "label": "Prospecting"
+            },
+            {
+              "value": "Qualification",
+              "label": "Qualification"
+            },
+            {
+              "value": "Proposal",
+              "label": "Proposal"
+            },
+            {
+              "value": "Negotiation",
+              "label": "Negotiation"
+            },
+            {
+              "value": "Closed Won",
+              "label": "Closed Won"
+            },
+            {
+              "value": "Closed Lost",
+              "label": "Closed Lost"
+            }
+          ],
+          "default": "Prospecting"
+        },
+        "amount": {
+          "label": "Amount",
+          "type": "currency",
+          "widget": "input",
+          "required": true,
+          "cell": "amount",
+          "cellLabel": "Amount",
+          "panel": "main",
+          "selector": ".cell[data-name=\"amount\"]",
+          "currencyField": "amountCurrency"
+        },
+        "probability": {
+          "label": "Probability, %",
+          "type": "int",
+          "widget": "input",
+          "required": false,
+          "cell": "probability",
+          "cellLabel": "Probability, %",
+          "panel": "main",
+          "selector": ".cell[data-name=\"probability\"]"
+        },
+        "closeDate": {
+          "label": "Close Date",
+          "type": "date",
+          "widget": "datepicker",
+          "required": true,
+          "cell": "closeDate",
+          "cellLabel": "Close Date",
+          "panel": "main",
+          "selector": ".cell[data-name=\"closeDate\"]"
+        },
+        "contacts": {
+          "label": "Contacts",
+          "type": "linkMultiple",
+          "widget": "autocomplete-multiple",
+          "required": false,
+          "cell": "contacts",
+          "cellLabel": "Contacts",
+          "panel": "main",
+          "selector": ".cell[data-name=\"contacts\"]",
+          "entity": "Contact"
+        },
+        "leadSource": {
+          "label": "Lead Source",
+          "type": "enum",
+          "widget": "selectize",
+          "required": false,
+          "cell": "leadSource",
+          "cellLabel": "Lead Source",
+          "panel": "main",
+          "selector": ".cell[data-name=\"leadSource\"]",
+          "options": [
+            {
+              "value": "",
+              "label": ""
+            },
+            {
+              "value": "Call",
+              "label": "Call"
+            },
+            {
+              "value": "Email",
+              "label": "Email"
+            },
+            {
+              "value": "Existing Customer",
+              "label": "Existing Customer"
+            },
+            {
+              "value": "Partner",
+              "label": "Partner"
+            },
+            {
+              "value": "Public Relations",
+              "label": "Public Relations"
+            },
+            {
+              "value": "Web Site",
+              "label": "Web Site"
+            },
+            {
+              "value": "Campaign",
+              "label": "Campaign"
+            },
+            {
+              "value": "Other",
+              "label": "Other"
+            }
+          ]
+        },
+        "description": {
+          "label": "Description",
+          "type": "text",
+          "widget": "textarea",
+          "required": false,
+          "cell": "description",
+          "cellLabel": "Description",
+          "panel": "main",
+          "selector": ".cell[data-name=\"description\"]"
+        },
+        "assignedUser": {
+          "label": "Assigned User",
+          "type": "link",
+          "widget": "autocomplete",
+          "required": false,
+          "cell": "assignedUser",
+          "cellLabel": "Assigned User",
+          "panel": "side",
+          "selector": ".cell[data-name=\"assignedUser\"]",
+          "entity": "User"
+        },
+        "teams": {
+          "label": "Teams",
+          "type": "linkMultiple",
+          "widget": "autocomplete-multiple",
+          "required": false,
+          "cell": "teams",
+          "cellLabel": "Teams",
+          "panel": "side",
+          "selector": ".cell[data-name=\"teams\"]",
+          "entity": "Team"
+        }
+      },
+      "requiredFields": [
+        "name",
+        "amount",
+        "closeDate"
+      ],
+      "actions": {
+        "create": [
+          {
+            "action": "save",
+            "text": "Save",
+            "inMenu": false
+          },
+          {
+            "action": "cancel",
+            "text": "Cancel",
+            "inMenu": false
+          },
+          {
+            "action": "saveAndContinueEditing",
+            "text": "Save & Continue Editing",
+            "inMenu": true
+          },
+          {
+            "action": "saveAndNew",
+            "text": "Save & New",
+            "inMenu": true
+          },
+          {
+            "action": "addItem",
+            "text": "",
+            "inMenu": false
+          },
+          {
+            "action": "addProducts",
+            "text": "Add Products",
+            "inMenu": true
+          }
+        ],
+        "detail": [
+          {
+            "action": "unfollow",
+            "text": "Followed",
+            "inMenu": false
+          },
+          {
+            "action": "edit",
+            "text": "Edit",
+            "inMenu": false
+          },
+          {
+            "action": "delete",
+            "text": "Remove",
+            "inMenu": true
+          },
+          {
+            "action": "duplicate",
+            "text": "Duplicate",
+            "inMenu": true
+          },
+          {
+            "action": "viewFollowers",
+            "text": "View Followers",
+            "inMenu": true
+          },
+          {
+            "action": "viewAuditLog",
+            "text": "View Audit Log",
+            "inMenu": true
+          },
+          {
+            "action": "viewUserAccess",
+            "text": "View User Access",
+            "inMenu": true
+          },
+          {
+            "action": "convertCurrency",
+            "text": "Convert Currency",
+            "inMenu": true
+          },
+          {
+            "action": "saveAndContinueEditing",
+            "text": "Save & Continue Editing",
+            "inMenu": true
+          }
+        ]
+      },
+      "list": {
+        "columns": [],
+        "kanban": true,
+        "kanbanGroups": [
+          "Prospecting",
+          "Qualification",
+          "Proposal",
+          "Negotiation",
+          "Closed Won"
+        ],
+        "hasTextSearch": true
+      }
+    },
+    "Account": {
+      "label": "Account",
+      "labelPlural": "Accounts",
+      "routes": {
+        "list": "#Account",
+        "create": "#Account/create",
+        "detail": "#Account/view/{id}"
+      },
+      "fields": {
+        "name": {
+          "label": "Name",
+          "type": "varchar",
+          "widget": "input",
+          "required": true,
+          "cell": "name",
+          "cellLabel": "Name",
+          "panel": "main",
+          "selector": ".cell[data-name=\"name\"]",
+          "maxLength": 249
+        },
+        "website": {
+          "label": "Website",
+          "type": "url",
+          "widget": "input",
+          "required": false,
+          "cell": "website",
+          "cellLabel": "Website",
+          "panel": "main",
+          "selector": ".cell[data-name=\"website\"]"
+        },
+        "emailAddress": {
+          "label": "Email",
+          "type": "email",
+          "widget": "input",
+          "required": false,
+          "cell": "emailAddress",
+          "cellLabel": "Email",
+          "panel": "main",
+          "selector": ".cell[data-name=\"emailAddress\"]"
+        },
+        "phoneNumber": {
+          "label": "Phone",
+          "type": "phone",
+          "widget": "input",
+          "required": false,
+          "cell": "phoneNumber",
+          "cellLabel": "Phone",
+          "panel": "main",
+          "selector": ".cell[data-name=\"phoneNumber\"]"
+        },
+        "billingAddressStreet": {
+          "label": "Street",
+          "type": "text",
+          "widget": "textarea",
+          "required": false,
+          "cell": "billingAddress",
+          "cellLabel": "Billing Address",
+          "panel": "main",
+          "selector": ".cell[data-name=\"billingAddress\"] [data-name=\"billingAddressStreet\"]",
+          "maxLength": 255
+        },
+        "billingAddressCity": {
+          "label": "City",
+          "type": "varchar",
+          "widget": "input",
+          "required": false,
+          "cell": "billingAddress",
+          "cellLabel": "Billing Address",
+          "panel": "main",
+          "selector": ".cell[data-name=\"billingAddress\"] [data-name=\"billingAddressCity\"]",
+          "maxLength": 100
+        },
+        "billingAddressState": {
+          "label": "State",
+          "type": "varchar",
+          "widget": "input",
+          "required": false,
+          "cell": "billingAddress",
+          "cellLabel": "Billing Address",
+          "panel": "main",
+          "selector": ".cell[data-name=\"billingAddress\"] [data-name=\"billingAddressState\"]",
+          "maxLength": 100
+        },
+        "billingAddressPostalCode": {
+          "label": "Postal Code",
+          "type": "varchar",
+          "widget": "input",
+          "required": false,
+          "cell": "billingAddress",
+          "cellLabel": "Billing Address",
+          "panel": "main",
+          "selector": ".cell[data-name=\"billingAddress\"] [data-name=\"billingAddressPostalCode\"]",
+          "maxLength": 40
+        },
+        "billingAddressCountry": {
+          "label": "Country",
+          "type": "varchar",
+          "widget": "input",
+          "required": false,
+          "cell": "billingAddress",
+          "cellLabel": "Billing Address",
+          "panel": "main",
+          "selector": ".cell[data-name=\"billingAddress\"] [data-name=\"billingAddressCountry\"]",
+          "maxLength": 100
+        },
+        "shippingAddressStreet": {
+          "label": "Street (Shipping)",
+          "type": "text",
+          "widget": "textarea",
+          "required": false,
+          "cell": "shippingAddress",
+          "cellLabel": "Shipping Address",
+          "panel": "main",
+          "selector": ".cell[data-name=\"shippingAddress\"] [data-name=\"shippingAddressStreet\"]",
+          "maxLength": 255
+        },
+        "shippingAddressCity": {
+          "label": "City (Shipping)",
+          "type": "varchar",
+          "widget": "input",
+          "required": false,
+          "cell": "shippingAddress",
+          "cellLabel": "Shipping Address",
+          "panel": "main",
+          "selector": ".cell[data-name=\"shippingAddress\"] [data-name=\"shippingAddressCity\"]",
+          "maxLength": 100
+        },
+        "shippingAddressState": {
+          "label": "State (Shipping)",
+          "type": "varchar",
+          "widget": "input",
+          "required": false,
+          "cell": "shippingAddress",
+          "cellLabel": "Shipping Address",
+          "panel": "main",
+          "selector": ".cell[data-name=\"shippingAddress\"] [data-name=\"shippingAddressState\"]",
+          "maxLength": 100
+        },
+        "shippingAddressPostalCode": {
+          "label": "Postal Code (Shipping)",
+          "type": "varchar",
+          "widget": "input",
+          "required": false,
+          "cell": "shippingAddress",
+          "cellLabel": "Shipping Address",
+          "panel": "main",
+          "selector": ".cell[data-name=\"shippingAddress\"] [data-name=\"shippingAddressPostalCode\"]",
+          "maxLength": 40
+        },
+        "shippingAddressCountry": {
+          "label": "Country (Shipping)",
+          "type": "varchar",
+          "widget": "input",
+          "required": false,
+          "cell": "shippingAddress",
+          "cellLabel": "Shipping Address",
+          "panel": "main",
+          "selector": ".cell[data-name=\"shippingAddress\"] [data-name=\"shippingAddressCountry\"]",
+          "maxLength": 100
+        },
+        "type": {
+          "label": "Type",
+          "type": "enum",
+          "widget": "selectize",
+          "required": false,
+          "cell": "type",
+          "cellLabel": "Type",
+          "panel": "main",
+          "selector": ".cell[data-name=\"type\"]",
+          "options": [
+            {
+              "value": "",
+              "label": ""
+            },
+            {
+              "value": "Customer",
+              "label": "Customer"
+            },
+            {
+              "value": "Investor",
+              "label": "Investor"
+            },
+            {
+              "value": "Partner",
+              "label": "Partner"
+            },
+            {
+              "value": "Reseller",
+              "label": "Reseller"
+            }
+          ]
+        },
+        "industry": {
+          "label": "Industry",
+          "type": "enum",
+          "widget": "selectize",
+          "required": false,
+          "cell": "industry",
+          "cellLabel": "Industry",
+          "panel": "main",
+          "selector": ".cell[data-name=\"industry\"]",
+          "options": [
+            {
+              "value": "",
+              "label": ""
+            },
+            {
+              "value": "Advertising",
+              "label": "Advertising"
+            },
+            {
+              "value": "Aerospace",
+              "label": "Aerospace"
+            },
+            {
+              "value": "Agriculture",
+              "label": "Agriculture"
+            },
+            {
+              "value": "Apparel & Accessories",
+              "label": "Apparel & Accessories"
+            },
+            {
+              "value": "Architecture",
+              "label": "Architecture"
+            },
+            {
+              "value": "Automotive",
+              "label": "Automotive"
+            },
+            {
+              "value": "Banking",
+              "label": "Banking"
+            },
+            {
+              "value": "Biotechnology",
+              "label": "Biotechnology"
+            },
+            {
+              "value": "Building Materials & Equipment",
+              "label": "Building Materials & Equipment"
+            },
+            {
+              "value": "Chemical",
+              "label": "Chemical"
+            },
+            {
+              "value": "Construction",
+              "label": "Construction"
+            },
+            {
+              "value": "Consulting",
+              "label": "Consulting"
+            },
+            {
+              "value": "Computer",
+              "label": "Computer"
+            },
+            {
+              "value": "Culture",
+              "label": "Culture"
+            },
+            {
+              "value": "Creative",
+              "label": "Creative"
+            },
+            {
+              "value": "Defense",
+              "label": "Defense"
+            },
+            {
+              "value": "Education",
+              "label": "Education"
+            },
+            {
+              "value": "Electronics",
+              "label": "Electronics"
+            },
+            {
+              "value": "Electric Power",
+              "label": "Electric Power"
+            },
+            {
+              "value": "Energy",
+              "label": "Energy"
+            },
+            {
+              "value": "Entertainment & Leisure",
+              "label": "Entertainment & Leisure"
+            },
+            {
+              "value": "Finance",
+              "label": "Finance"
+            },
+            {
+              "value": "Food & Beverage",
+              "label": "Food & Beverage"
+            },
+            {
+              "value": "Grocery",
+              "label": "Grocery"
+            },
+            {
+              "value": "Healthcare",
+              "label": "Healthcare"
+            },
+            {
+              "value": "Hospitality",
+              "label": "Hospitality"
+            },
+            {
+              "value": "Insurance",
+              "label": "Insurance"
+            },
+            {
+              "value": "Legal",
+              "label": "Legal"
+            },
+            {
+              "value": "Manufacturing",
+              "label": "Manufacturing"
+            },
+            {
+              "value": "Mass Media",
+              "label": "Mass Media"
+            },
+            {
+              "value": "Marketing",
+              "label": "Marketing"
+            },
+            {
+              "value": "Mining",
+              "label": "Mining"
+            },
+            {
+              "value": "Music",
+              "label": "Music"
+            },
+            {
+              "value": "Publishing",
+              "label": "Publishing"
+            },
+            {
+              "value": "Petroleum",
+              "label": "Petroleum"
+            },
+            {
+              "value": "Real Estate",
+              "label": "Real Estate"
+            },
+            {
+              "value": "Retail",
+              "label": "Retail"
+            },
+            {
+              "value": "Service",
+              "label": "Service"
+            },
+            {
+              "value": "Sports",
+              "label": "Sports"
+            },
+            {
+              "value": "Software",
+              "label": "Software"
+            },
+            {
+              "value": "Support",
+              "label": "Support"
+            },
+            {
+              "value": "Shipping",
+              "label": "Shipping"
+            },
+            {
+              "value": "Travel",
+              "label": "Travel"
+            },
+            {
+              "value": "Technology",
+              "label": "Technology"
+            },
+            {
+              "value": "Telecommunications",
+              "label": "Telecommunications"
+            },
+            {
+              "value": "Television",
+              "label": "Television"
+            },
+            {
+              "value": "Transportation",
+              "label": "Transportation"
+            },
+            {
+              "value": "Testing, Inspection & Certification",
+              "label": "Testing, Inspection & Certification"
+            },
+            {
+              "value": "Venture Capital",
+              "label": "Venture Capital"
+            },
+            {
+              "value": "Wholesale",
+              "label": "Wholesale"
+            },
+            {
+              "value": "Water",
+              "label": "Water"
+            }
+          ]
+        },
+        "description": {
+          "label": "Description",
+          "type": "text",
+          "widget": "textarea",
+          "required": false,
+          "cell": "description",
+          "cellLabel": "Description",
+          "panel": "main",
+          "selector": ".cell[data-name=\"description\"]"
+        },
+        "assignedUser": {
+          "label": "Assigned User",
+          "type": "link",
+          "widget": "autocomplete",
+          "required": false,
+          "cell": "assignedUser",
+          "cellLabel": "Assigned User",
+          "panel": "side",
+          "selector": ".cell[data-name=\"assignedUser\"]",
+          "entity": "User"
+        },
+        "teams": {
+          "label": "Teams",
+          "type": "linkMultiple",
+          "widget": "autocomplete-multiple",
+          "required": false,
+          "cell": "teams",
+          "cellLabel": "Teams",
+          "panel": "side",
+          "selector": ".cell[data-name=\"teams\"]",
+          "entity": "Team"
+        }
+      },
+      "requiredFields": [
+        "name"
+      ],
+      "actions": {
+        "create": [
+          {
+            "action": "save",
+            "text": "Save",
+            "inMenu": false
+          },
+          {
+            "action": "cancel",
+            "text": "Cancel",
+            "inMenu": false
+          },
+          {
+            "action": "saveAndContinueEditing",
+            "text": "Save & Continue Editing",
+            "inMenu": true
+          },
+          {
+            "action": "saveAndNew",
+            "text": "Save & New",
+            "inMenu": true
+          }
+        ],
+        "detail": [
+          {
+            "action": "unstar",
+            "text": "Starred",
+            "inMenu": false
+          },
+          {
+            "action": "follow",
+            "text": "Follow",
+            "inMenu": false
+          },
+          {
+            "action": "edit",
+            "text": "Edit",
+            "inMenu": false
+          },
+          {
+            "action": "delete",
+            "text": "Remove",
+            "inMenu": true
+          },
+          {
+            "action": "duplicate",
+            "text": "Duplicate",
+            "inMenu": true
+          },
+          {
+            "action": "viewPersonalData",
+            "text": "View Personal Data",
+            "inMenu": true
+          },
+          {
+            "action": "viewFollowers",
+            "text": "View Followers",
+            "inMenu": true
+          },
+          {
+            "action": "viewAuditLog",
+            "text": "View Audit Log",
+            "inMenu": true
+          },
+          {
+            "action": "viewUserAccess",
+            "text": "View User Access",
+            "inMenu": true
+          },
+          {
+            "action": "lock",
+            "text": "Lock",
+            "inMenu": true
+          },
+          {
+            "action": "saveAndContinueEditing",
+            "text": "Save & Continue Editing",
+            "inMenu": true
+          }
+        ]
+      },
+      "list": {
+        "columns": [
+          {
+            "name": "name",
+            "label": "Name"
+          },
+          {
+            "name": "industry",
+            "label": "Industry"
+          },
+          {
+            "name": "type",
+            "label": "Type"
+          },
+          {
+            "name": "billingAddressCountry",
+            "label": "Country"
+          }
+        ],
+        "kanban": false,
+        "kanbanGroups": [],
+        "hasTextSearch": true
+      }
+    },
+    "Lead": {
+      "label": "Lead",
+      "labelPlural": "Leads",
+      "routes": {
+        "list": "#Lead",
+        "create": "#Lead/create",
+        "detail": "#Lead/view/{id}"
+      },
+      "fields": {
+        "salutationName": {
+          "label": "Salutation",
+          "type": "enum",
+          "widget": "selectize",
+          "required": false,
+          "cell": "name",
+          "cellLabel": "Name",
+          "panel": "main",
+          "selector": ".cell[data-name=\"name\"] [data-name=\"salutationName\"]",
+          "options": [
+            {
+              "value": "",
+              "label": ""
+            },
+            {
+              "value": "Mr.",
+              "label": "Mr."
+            },
+            {
+              "value": "Ms.",
+              "label": "Ms."
+            },
+            {
+              "value": "Mrs.",
+              "label": "Mrs."
+            },
+            {
+              "value": "Dr.",
+              "label": "Dr."
+            }
+          ]
+        },
+        "firstName": {
+          "label": "First Name",
+          "type": "varchar",
+          "widget": "input",
+          "required": false,
+          "cell": "name",
+          "cellLabel": "Name",
+          "panel": "main",
+          "selector": ".cell[data-name=\"name\"] [data-name=\"firstName\"]",
+          "maxLength": 100
+        },
+        "lastName": {
+          "label": "Last Name",
+          "type": "varchar",
+          "widget": "input",
+          "required": false,
+          "cell": "name",
+          "cellLabel": "Name",
+          "panel": "main",
+          "selector": ".cell[data-name=\"name\"] [data-name=\"lastName\"]",
+          "maxLength": 100
+        },
+        "accountName": {
+          "label": "Account Name",
+          "type": "varchar",
+          "widget": "input",
+          "required": false,
+          "cell": "accountName",
+          "cellLabel": "Account Name",
+          "panel": "main",
+          "selector": ".cell[data-name=\"accountName\"]"
+        },
+        "emailAddress": {
+          "label": "Email",
+          "type": "email",
+          "widget": "input",
+          "required": false,
+          "cell": "emailAddress",
+          "cellLabel": "Email",
+          "panel": "main",
+          "selector": ".cell[data-name=\"emailAddress\"]"
+        },
+        "phoneNumber": {
+          "label": "Phone",
+          "type": "phone",
+          "widget": "input",
+          "required": false,
+          "cell": "phoneNumber",
+          "cellLabel": "Phone",
+          "panel": "main",
+          "selector": ".cell[data-name=\"phoneNumber\"]"
+        },
+        "title": {
+          "label": "Title",
+          "type": "varchar",
+          "widget": "input",
+          "required": false,
+          "cell": "title",
+          "cellLabel": "Title",
+          "panel": "main",
+          "selector": ".cell[data-name=\"title\"]",
+          "maxLength": 100
+        },
+        "website": {
+          "label": "Website",
+          "type": "url",
+          "widget": "input",
+          "required": false,
+          "cell": "website",
+          "cellLabel": "Website",
+          "panel": "main",
+          "selector": ".cell[data-name=\"website\"]"
+        },
+        "addressStreet": {
+          "label": "Street",
+          "type": "text",
+          "widget": "textarea",
+          "required": false,
+          "cell": "address",
+          "cellLabel": "Address",
+          "panel": "main",
+          "selector": ".cell[data-name=\"address\"] [data-name=\"addressStreet\"]",
+          "maxLength": 255
+        },
+        "addressCity": {
+          "label": "City",
+          "type": "varchar",
+          "widget": "input",
+          "required": false,
+          "cell": "address",
+          "cellLabel": "Address",
+          "panel": "main",
+          "selector": ".cell[data-name=\"address\"] [data-name=\"addressCity\"]",
+          "maxLength": 100
+        },
+        "addressState": {
+          "label": "State",
+          "type": "varchar",
+          "widget": "input",
+          "required": false,
+          "cell": "address",
+          "cellLabel": "Address",
+          "panel": "main",
+          "selector": ".cell[data-name=\"address\"] [data-name=\"addressState\"]",
+          "maxLength": 100
+        },
+        "addressPostalCode": {
+          "label": "Postal Code",
+          "type": "varchar",
+          "widget": "input",
+          "required": false,
+          "cell": "address",
+          "cellLabel": "Address",
+          "panel": "main",
+          "selector": ".cell[data-name=\"address\"] [data-name=\"addressPostalCode\"]",
+          "maxLength": 40
+        },
+        "addressCountry": {
+          "label": "Country",
+          "type": "varchar",
+          "widget": "input",
+          "required": false,
+          "cell": "address",
+          "cellLabel": "Address",
+          "panel": "main",
+          "selector": ".cell[data-name=\"address\"] [data-name=\"addressCountry\"]",
+          "maxLength": 100
+        },
+        "status": {
+          "label": "Status",
+          "type": "enum",
+          "widget": "selectize",
+          "required": false,
+          "cell": "status",
+          "cellLabel": "Status",
+          "panel": "main",
+          "selector": ".cell[data-name=\"status\"]",
+          "options": [
+            {
+              "value": "New",
+              "label": "New"
+            },
+            {
+              "value": "Assigned",
+              "label": "Assigned"
+            },
+            {
+              "value": "In Process",
+              "label": "In Process"
+            },
+            {
+              "value": "Converted",
+              "label": "Converted"
+            },
+            {
+              "value": "Recycled",
+              "label": "Recycled"
+            },
+            {
+              "value": "Dead",
+              "label": "Dead"
+            }
+          ],
+          "default": "New"
+        },
+        "source": {
+          "label": "Source",
+          "type": "enum",
+          "widget": "selectize",
+          "required": false,
+          "cell": "source",
+          "cellLabel": "Source",
+          "panel": "main",
+          "selector": ".cell[data-name=\"source\"]",
+          "options": [
+            {
+              "value": "",
+              "label": ""
+            },
+            {
+              "value": "Call",
+              "label": "Call"
+            },
+            {
+              "value": "Email",
+              "label": "Email"
+            },
+            {
+              "value": "Existing Customer",
+              "label": "Existing Customer"
+            },
+            {
+              "value": "Partner",
+              "label": "Partner"
+            },
+            {
+              "value": "Public Relations",
+              "label": "Public Relations"
+            },
+            {
+              "value": "Web Site",
+              "label": "Web Site"
+            },
+            {
+              "value": "Campaign",
+              "label": "Campaign"
+            },
+            {
+              "value": "Other",
+              "label": "Other"
+            }
+          ]
+        },
+        "opportunityAmount": {
+          "label": "Opportunity Amount",
+          "type": "currency",
+          "widget": "input",
+          "required": false,
+          "cell": "opportunityAmount",
+          "cellLabel": "Opportunity Amount",
+          "panel": "main",
+          "selector": ".cell[data-name=\"opportunityAmount\"]",
+          "currencyField": "opportunityAmountCurrency"
+        },
+        "campaign": {
+          "label": "Campaign",
+          "type": "link",
+          "widget": "autocomplete",
+          "required": false,
+          "cell": "campaign",
+          "cellLabel": "Campaign",
+          "panel": "main",
+          "selector": ".cell[data-name=\"campaign\"]",
+          "entity": "Campaign"
+        },
+        "industry": {
+          "label": "Industry",
+          "type": "enum",
+          "widget": "selectize",
+          "required": false,
+          "cell": "industry",
+          "cellLabel": "Industry",
+          "panel": "main",
+          "selector": ".cell[data-name=\"industry\"]",
+          "options": [
+            {
+              "value": "",
+              "label": ""
+            },
+            {
+              "value": "Advertising",
+              "label": "Advertising"
+            },
+            {
+              "value": "Aerospace",
+              "label": "Aerospace"
+            },
+            {
+              "value": "Agriculture",
+              "label": "Agriculture"
+            },
+            {
+              "value": "Apparel & Accessories",
+              "label": "Apparel & Accessories"
+            },
+            {
+              "value": "Architecture",
+              "label": "Architecture"
+            },
+            {
+              "value": "Automotive",
+              "label": "Automotive"
+            },
+            {
+              "value": "Banking",
+              "label": "Banking"
+            },
+            {
+              "value": "Biotechnology",
+              "label": "Biotechnology"
+            },
+            {
+              "value": "Building Materials & Equipment",
+              "label": "Building Materials & Equipment"
+            },
+            {
+              "value": "Chemical",
+              "label": "Chemical"
+            },
+            {
+              "value": "Construction",
+              "label": "Construction"
+            },
+            {
+              "value": "Consulting",
+              "label": "Consulting"
+            },
+            {
+              "value": "Computer",
+              "label": "Computer"
+            },
+            {
+              "value": "Culture",
+              "label": "Culture"
+            },
+            {
+              "value": "Creative",
+              "label": "Creative"
+            },
+            {
+              "value": "Defense",
+              "label": "Defense"
+            },
+            {
+              "value": "Education",
+              "label": "Education"
+            },
+            {
+              "value": "Electronics",
+              "label": "Electronics"
+            },
+            {
+              "value": "Electric Power",
+              "label": "Electric Power"
+            },
+            {
+              "value": "Energy",
+              "label": "Energy"
+            },
+            {
+              "value": "Entertainment & Leisure",
+              "label": "Entertainment & Leisure"
+            },
+            {
+              "value": "Finance",
+              "label": "Finance"
+            },
+            {
+              "value": "Food & Beverage",
+              "label": "Food & Beverage"
+            },
+            {
+              "value": "Grocery",
+              "label": "Grocery"
+            },
+            {
+              "value": "Healthcare",
+              "label": "Healthcare"
+            },
+            {
+              "value": "Hospitality",
+              "label": "Hospitality"
+            },
+            {
+              "value": "Insurance",
+              "label": "Insurance"
+            },
+            {
+              "value": "Legal",
+              "label": "Legal"
+            },
+            {
+              "value": "Manufacturing",
+              "label": "Manufacturing"
+            },
+            {
+              "value": "Mass Media",
+              "label": "Mass Media"
+            },
+            {
+              "value": "Marketing",
+              "label": "Marketing"
+            },
+            {
+              "value": "Mining",
+              "label": "Mining"
+            },
+            {
+              "value": "Music",
+              "label": "Music"
+            },
+            {
+              "value": "Publishing",
+              "label": "Publishing"
+            },
+            {
+              "value": "Petroleum",
+              "label": "Petroleum"
+            },
+            {
+              "value": "Real Estate",
+              "label": "Real Estate"
+            },
+            {
+              "value": "Retail",
+              "label": "Retail"
+            },
+            {
+              "value": "Service",
+              "label": "Service"
+            },
+            {
+              "value": "Sports",
+              "label": "Sports"
+            },
+            {
+              "value": "Software",
+              "label": "Software"
+            },
+            {
+              "value": "Support",
+              "label": "Support"
+            },
+            {
+              "value": "Shipping",
+              "label": "Shipping"
+            },
+            {
+              "value": "Travel",
+              "label": "Travel"
+            },
+            {
+              "value": "Technology",
+              "label": "Technology"
+            },
+            {
+              "value": "Telecommunications",
+              "label": "Telecommunications"
+            },
+            {
+              "value": "Television",
+              "label": "Television"
+            },
+            {
+              "value": "Transportation",
+              "label": "Transportation"
+            },
+            {
+              "value": "Testing, Inspection & Certification",
+              "label": "Testing, Inspection & Certification"
+            },
+            {
+              "value": "Venture Capital",
+              "label": "Venture Capital"
+            },
+            {
+              "value": "Wholesale",
+              "label": "Wholesale"
+            },
+            {
+              "value": "Water",
+              "label": "Water"
+            }
+          ]
+        },
+        "description": {
+          "label": "Description",
+          "type": "text",
+          "widget": "textarea",
+          "required": false,
+          "cell": "description",
+          "cellLabel": "Description",
+          "panel": "main",
+          "selector": ".cell[data-name=\"description\"]"
+        },
+        "assignedUser": {
+          "label": "Assigned User",
+          "type": "link",
+          "widget": "autocomplete",
+          "required": false,
+          "cell": "assignedUser",
+          "cellLabel": "Assigned User",
+          "panel": "side",
+          "selector": ".cell[data-name=\"assignedUser\"]",
+          "entity": "User"
+        },
+        "teams": {
+          "label": "Teams",
+          "type": "linkMultiple",
+          "widget": "autocomplete-multiple",
+          "required": false,
+          "cell": "teams",
+          "cellLabel": "Teams",
+          "panel": "side",
+          "selector": ".cell[data-name=\"teams\"]",
+          "entity": "Team"
+        }
+      },
+      "requiredFields": [],
+      "actions": {
+        "create": [
+          {
+            "action": "save",
+            "text": "Save",
+            "inMenu": false
+          },
+          {
+            "action": "cancel",
+            "text": "Cancel",
+            "inMenu": false
+          },
+          {
+            "action": "saveAndContinueEditing",
+            "text": "Save & Continue Editing",
+            "inMenu": true
+          },
+          {
+            "action": "saveAndNew",
+            "text": "Save & New",
+            "inMenu": true
+          }
+        ],
+        "detail": [
+          {
+            "action": "unfollow",
+            "text": "Followed",
+            "inMenu": false
+          },
+          {
+            "action": "convert",
+            "text": "Convert",
+            "inMenu": false
+          },
+          {
+            "action": "edit",
+            "text": "Edit",
+            "inMenu": false
+          },
+          {
+            "action": "delete",
+            "text": "Remove",
+            "inMenu": true
+          },
+          {
+            "action": "duplicate",
+            "text": "Duplicate",
+            "inMenu": true
+          },
+          {
+            "action": "viewPersonalData",
+            "text": "View Personal Data",
+            "inMenu": true
+          },
+          {
+            "action": "viewFollowers",
+            "text": "View Followers",
+            "inMenu": true
+          },
+          {
+            "action": "viewAuditLog",
+            "text": "View Audit Log",
+            "inMenu": true
+          },
+          {
+            "action": "viewUserAccess",
+            "text": "View User Access",
+            "inMenu": true
+          },
+          {
+            "action": "convertCurrency",
+            "text": "Convert Currency",
+            "inMenu": true
+          },
+          {
+            "action": "saveAndContinueEditing",
+            "text": "Save & Continue Editing",
+            "inMenu": true
+          }
+        ]
+      },
+      "list": {
+        "columns": [
+          {
+            "name": "name",
+            "label": "Name"
+          },
+          {
+            "name": "status",
+            "label": "Status"
+          },
+          {
+            "name": "emailAddress",
+            "label": "Email"
+          },
+          {
+            "name": "phoneNumber",
+            "label": "Phone"
+          },
+          {
+            "name": "assignedUser",
+            "label": "Assigned User"
+          }
+        ],
+        "kanban": false,
+        "kanbanGroups": [],
+        "hasTextSearch": true
+      }
+    }
+  }
+}
