@@ -336,7 +336,12 @@ class Session:
             return
 
         await self.send_event(
-            "status", state="starting", message="Opening the CRM and connecting the voice agent…"
+            "status", state="starting", message=(
+                "Opening the CRM and connecting the voice agent… (free hosting: this can take "
+                "up to ~40 s, and each CRM action ~10 s)"
+                if self.settings.low_memory
+                else "Opening the CRM and connecting the voice agent…"
+            )
         )
         try:
             if self._run_tool is None or self._tool_declarations is None:
