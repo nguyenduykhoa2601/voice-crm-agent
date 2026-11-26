@@ -4,10 +4,15 @@
 contact named Maya Okafor", and it opens the form, fills it while you watch, reads it back, and saves. Interrupt it
 anytime (correct a name before Save, ask a question midway, or change your mind) and it adapts without losing the
 form. It only says "saved" after reading the result back from the page, and every run is measured: latency, task
-completion and false-success claims across 20 scripted conversations.
+completion and false-success claims across scripted multi-turn conversations.
 
-**Live demo:** [LIVE_DEMO_URL] · **Technical notes (PDF):** [docs/TECHNICAL_NOTES.pdf](docs/TECHNICAL_NOTES.pdf) ·
+**Live demo:** https://voice-crm-agent.onrender.com · **Technical notes (PDF):** [docs/TECHNICAL_NOTES.pdf](docs/TECHNICAL_NOTES.pdf) ·
 **Eval report:** [evals/REPORT.md](evals/REPORT.md)
+
+> **About the hosted demo.** It runs on a free instance (0.1 CPU, 512 MB) that sleeps when idle, so the first visit
+> takes about a minute to wake up, a session takes ~30 s to open the CRM, and each CRM action takes 8–11 s. Measured
+> on a normal machine the same build opens a session in ~6 s, fills a form in ~0.5–2 s and saves in ~2.5 s (see the
+> eval report). Chrome or Edge with headphones gives the best experience; one visitor at a time.
 
 Built with the Gemini Live API (`gemini-3.1-flash-live-preview`, speech-to-speech), Playwright and FastAPI.
 

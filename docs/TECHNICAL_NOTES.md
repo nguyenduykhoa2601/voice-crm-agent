@@ -1,6 +1,6 @@
 # Voice CRM Agent: technical notes
 
-Live demo: [LIVE_DEMO_URL] · Repository: https://github.com/nguyenduykhoa2601/voice-crm-agent
+Live demo: https://voice-crm-agent.onrender.com (free instance: slow, see section 10) · Repository: https://github.com/nguyenduykhoa2601/voice-crm-agent
 
 ## 1. Summary
 
@@ -286,7 +286,7 @@ idle minutes** (`docs/DEPLOY.md`). Hence: **one session at a time** (`MAX_SESSIO
 "busy" instead of an out-of-memory restart); a **lazy browser** (`LOW_MEMORY=1`: Chromium starts with the first
 session and closes after the last, with single-renderer flags and a smaller, sparser screencast); headless shell
 only, non-root user; `/ws` guarded by an Origin allow-list (`ALLOWED_ORIGINS`), size caps and a start deadline.
-A cold start takes roughly 30–60 s, so I warm it via `/healthz` before a review.
+A cold start takes roughly 30–60 s, so I warm it via `/healthz` before a review. Measured on the hosted instance, the 0.1 CPU is the real limit: opening a session takes ~34 s and CRM actions 8–11 s (vs ~6 s and 0.5–2.5 s locally), while memory stayed within 512 MB. A paid instance with 0.5 CPU is the obvious fix; I kept the free tier for this prototype.
 
 **Limitations.**
 

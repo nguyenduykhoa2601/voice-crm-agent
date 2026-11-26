@@ -217,6 +217,17 @@ def check_health(url: str, attempts: int = 12) -> bool:
     return False
 
 
+def trigger_deploy(api, service_id: str, body: dict) -> str:
+    """Start a deploy and return its id. Render may answer 202 without a body when a
+    deploy is already queued (e.g. an auto-deploy from the same push): then follow
+    the newest deploy instead."""
+    started = api.call("POST", f"/services/{service_id}/deploys", body) or {}
+    if started.get("id"):
+        return started["id"]
+    latest = api.call("GET", f"/services/{service_id}/deploys?limit=1") or []
+    return (latest[0].get("deploy", latest[0]))["id"]
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--dry-run", action="store_true", help="print payloads, call nothing")
@@ -263,12 +274,12 @@ def main() -> int:
         service = created["service"]
         deploy_id = created.get("deployId")
         if not deploy_id:  # creation normally starts the first deploy
-            deploy_id = (api.call("POST", f"/services/{service['id']}/deploys", deploy_body) or {})["id"]
+            deploy_id = trigger_deploy(api, service["id"], deploy_body)
     else:
         print(f"Updating existing service {service['id']} ...")
         api.call("PATCH", f"/services/{service['id']}", update_payload(cfg))
         api.call("PUT", f"/services/{service['id']}/env-vars", vars_)
-        deploy_id = (api.call("POST", f"/services/{service['id']}/deploys", deploy_body) or {})["id"]
+        deploy_id = trigger_deploy(api, service["id"], deploy_body)
 
     service_id = service["id"]
     print(f"Dashboard: {service.get('dashboardUrl', '')}")
