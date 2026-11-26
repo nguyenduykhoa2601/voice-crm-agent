@@ -377,7 +377,7 @@ async def _type(session: CrmSession, loc: Locator, value: str) -> None:
     await loc.click(timeout=ACTION_TIMEOUT_MS)
     await loc.fill("")
     if value:
-        delay = max(5, min(28, int(2500 / max(len(value), 1))))
+        delay = max(4, min(12, int(600 / max(len(value), 1))))  # visible typing, ~0.4 s per field max
         await loc.press_sequentially(value, delay=delay)
     await loc.evaluate("el => { el.dispatchEvent(new Event('change', {bubbles: true})); el.blur(); }")
 
@@ -600,7 +600,7 @@ async def _fill_enum(session: CrmSession, fname: str, spec: dict, value: str, la
         if value and await control.count() and await control.is_visible():
             await session.highlight(control, 1500)
             await control.click(timeout=ACTION_TIMEOUT_MS)
-            await page.keyboard.type(label, delay=25)
+            await page.keyboard.type(label, delay=12)
             opt = page.locator(f"{select_sel} + .selectize-control .selectize-dropdown "
                                f".option[data-value=\"{value}\"]").first
             await opt.wait_for(state="visible", timeout=3000)
@@ -665,7 +665,7 @@ async def _type_no_blur(session: CrmSession, loc: Locator, value: str) -> None:
     await session.highlight(loc, 1500)
     await loc.click(timeout=ACTION_TIMEOUT_MS)
     await loc.fill("")
-    await loc.press_sequentially(value, delay=30)
+    await loc.press_sequentially(value, delay=12)
 
 
 async def _fill_one(session: CrmSession, uimap: UiMap, entity: str, key: str, raw_value: str) -> dict:

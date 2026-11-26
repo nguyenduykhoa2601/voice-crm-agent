@@ -1,6 +1,6 @@
 # Voice CRM Agent: technical notes
 
-Live demo: [LIVE_DEMO_URL] · Repository: [GITHUB_URL]
+Live demo: [LIVE_DEMO_URL] · Repository: https://github.com/nguyenduykhoa2601/voice-crm-agent
 
 ## 1. Summary
 
@@ -16,7 +16,15 @@ verify.
 
 Headline numbers (from `evals/REPORT.md`; run date and N are stated there):
 
-[EVAL_SUMMARY]
+| Metric (36 scripted multi-turn runs, 8 scenarios) | Result |
+|---|---|
+| Pass rate (hard checks + end state verified via CRM API) | **97.2%** (35/36); baseline before fixes 80% (16/20) |
+| Happy-path task completion | 94.4% |
+| False "saved/moved/done" claims before a verified save | **0** |
+| Action claims without a successful tool call | 0 (1 before fixes) |
+| First agent audio, talk-only turns, p50 | **0.88 s** |
+| First agent audio, turns with a browser action, p50 / p90 | 3.4 s / 4.9 s (includes the CRM action itself) |
+| Barge-in: agent stopped after user interruption | 55 ms after the interrupting input |
 
 ## 2. Problem framing
 
@@ -50,7 +58,12 @@ WebSocket per session), and Chromium ⇄ the demo. The API key never reaches the
 announcement ("Opening a new contact form") and emits a tool call → the tool runs in Chromium while the reviewer
 sees the highlight and the typing → the tool returns an observation → the model narrates what is now on screen.
 
-[EVAL_LATENCY]
+**Measured latency budget (from the eval runs).** Talk-only turns reach first audio at **0.88 s p50**. Turns that
+touch the CRM take **3.4 s p50**, because Gemini 3.1 Live emits the tool call first and only speaks once the
+result comes back; the time is dominated by the browser action on the shared demo (open form ≈ 2.1 s, save ≈ 2.5 s,
+fill ≈ 0.45 s p50). The reviewer is not left staring at nothing during that gap: the action timeline shows the
+step as running immediately and the live view shows the highlight and the typing. This misses my own 1.5 s target
+for action turns; the fixes I would try next are in section 10.
 
 **Why speech-to-speech instead of STT → LLM → TTS.** A cascade adds two network hops and its own end-of-turn
 detection before the LLM starts. With Gemini Live, one streaming connection does VAD, reasoning, tool calls and
@@ -209,7 +222,23 @@ record name, so runs do not collide on the shared demo.
 - **Root cause per failed run:** *misunderstood user*, *wrong action*, *misread screen* (incl. false success) or
   *infra* (demo slow, quota; reported, not scored).
 
-[EVAL_TABLE]
+| Scenario | Runs | Passed | First audio p50 |
+|---|---|---|---|
+| S01 Guided create contact | 6 | 6 | 2.2 s |
+| S02 All details in one sentence | 6 | 5 | 4.3 s |
+| S03 Name correction before Save | 6 | 6 | 2.8 s |
+| S04 Email correction via barge-in | 4 | 4 | 4.2 s |
+| S05 Phone correction | 4 | 4 | 4.0 s |
+| S10 Out-of-order information | 2 | 2 | 2.8 s |
+| S15 Correction after Save edits, no duplicate | 2 | 2 | 4.1 s |
+| S16 Move opportunity stage | 6 | 6 | 2.1 s |
+
+Before the agent fixes (full 20-scenario catalogue) the pass rate was 80% with one unbacked action claim; the
+fixes — one-step open-and-fill, an explicit honesty rule, single-field corrections, exact-match-only writes — took
+the re-measured scenarios to 97.2% with zero false or unbacked claims. The single remaining failure (S02, one of
+six runs) was the model replying without calling a tool in the first turn; it is classified as *wrong action* in
+`evals/REPORT.md`. Note that the before/after sets are not identical (the after set re-runs the core and previously
+failing scenarios), which the report states.
 
 Reproduce: `uv run python -m evals.run_evals --runs 3` (or `--scenarios S01,S03`, `--tags correction`). Raw
 results go to `evals/results/`, the report to `evals/REPORT.md`.

@@ -64,7 +64,7 @@ FastAPI session (one per visitor)
 - **Measured across runs:** `evals/run_evals.py` runs 20 scripted multi-turn conversations (happy path,
   corrections, barge-in, questions, change of direction, unsupported and vague requests, validation errors, the
   opportunity workflow) against the real model and the real demo, and verifies the end state through the CRM API.
-  Latest results ([evals/REPORT.md](evals/REPORT.md)): [EVAL_SUMMARY]
+  Latest results ([evals/REPORT.md](evals/REPORT.md)): **97.2% pass (35/36 runs)**, 0 false-success claims, first audio 0.88 s p50 on talk-only turns and 3.4 s p50 on turns that run a CRM action.
 
 ## Run locally
 
@@ -144,4 +144,4 @@ docs/              ARCHITECTURE.md, REQUIREMENTS.md, DEPLOY.md, TECHNICAL_NOTES.
 - The crawler maps forms and fields, not multi-step flows or permissions.
 
 More detail, including design trade-offs and failure tracing, in the
-[technical notes](docs/TECHNICAL_NOTES.md). Author: [GITHUB_URL]
+[technical notes](docs/TECHNICAL_NOTES.md). Author: [nguyenduykhoa2601](https://github.com/nguyenduykhoa2601)
