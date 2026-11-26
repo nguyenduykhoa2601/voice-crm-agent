@@ -22,7 +22,9 @@ RUN uv sync --frozen --no-dev --no-install-project \
     && rm -rf /root/.cache
 
 # Only the Chromium headless shell (smaller than full Chromium) + its system libs.
-RUN playwright install --with-deps --only-shell chromium \
+# libatomic1 is needed by Playwright's bundled Node driver itself.
+RUN apt-get update && apt-get install -y --no-install-recommends libatomic1 \
+    && playwright install --with-deps --only-shell chromium \
     && rm -rf /var/lib/apt/lists/* /var/cache/apt/* /tmp/*
 
 # Unprivileged runtime user.
